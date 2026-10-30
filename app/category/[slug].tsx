@@ -1,205 +1,276 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, useRouter } from "expo-router";
 import React, { useEffect, useMemo, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
-  ScrollView,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
-import { MarketplaceProductCard } from "../../components/marketplace-product-card";
-import Colors from "../../constants/Colors";
+import { ArrowLeft, Package, Sparkles } from "lucide-react-native";
+import { Footer } from "../../components/Footer";
+import { MarketplaceProduct, MarketplaceProductCard } from "../../components/marketplace-product-card";
 import { BASE } from "../../constants/Api";
-import { getProductColumns } from "../../constants/layout";
+import Colors, { Spacing, Typography } from "../../constants/Colors";
+import { useResponsive } from "../../hooks/useResponsive";
 
-type SortMode = "recommended" | "price-asc" | "price-desc";
+type SortMode = "newest" | "price_asc" | "price_desc";
 
 export default function Category() {
   const { slug } = useLocalSearchParams<{ slug: string }>();
-  const [products, setProducts] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
-  const [sortMode, setSortMode] = useState<SortMode>("recommended");
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const columns = getProductColumns(width);
+  const { isMobile, columns } = useResponsive();
 
-  useEffect(() => {
+  const [products, setProducts] = useState<MarketplaceProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [sortMode, setSortMode] = useState<SortMode>("newest");
+
+  const loadProducts = async () => {
     if (!slug) return;
     setLoading(true);
-    setLoadError(false);
-    fetch(`${BASE}?action=products&category=${slug}`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Category products request failed (${response.status})`);
-        return response.json();
-      })
-      .then((data) => {
-        if (!Array.isArray(data)) throw new Error("Category products response was not a list");
-        setProducts(data);
-      })
-      .catch((error) => {
-        console.error(error);
-        setLoadError(true);
-      })
-      .finally(() => setLoading(false));
-  }, [slug]);
+    try {
+      const res = await fetch(`${BASE}?action=products&category=${encodeURIComponent(slug)}&sort=${sortMode}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setProducts(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  };
 
-  const sortedProducts = useMemo(() => {
-    if (sortMode === "recommended") return products;
-    return [...products].sort((a, b) => {
-      const difference = Number(a.price) - Number(b.price);
-      return sortMode === "price-asc" ? difference : -difference;
-    });
-  }, [products, sortMode]);
+  useEffect(() => {
+    loadProducts();
+  }, [slug, sortMode]);
 
   const categoryTitle = slug
     ? slug.replace(/-/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase())
-    : "Kategori";
+    : "Kategori Produk";
+
+  const renderHeader = () => (
+    <View style={styles.headerContainer}>
+      <TouchableOpacity style={styles.backBtn} onPress={() => router.back()}>
+        <ArrowLeft size={16} color={Colors.burgundy} />
+        <Text style={styles.backBtnText}>Kembali ke Katalog</Text>
+      </TouchableOpacity>
+
+      <View style={styles.titleCard}>
+        <View style={styles.badgeRow}>
+          <Sparkles size={14} color={Colors.gold} />
+          <Text style={styles.badgeText}>Koleksi Pilihan Indonesia</Text>
+        </View>
+        <Text style={styles.categoryTitle}>{categoryTitle}</Text>
+        <Text style={styles.categorySub}>
+          Menampilkan {products.length} produk siap ekspor ke Hong Kong dalam mata uang HK$.
+        </Text>
+      </View>
+
+      {/* Sort row */}
+      <View style={styles.sortRow}>
+        <Text style={styles.sortLabel}>Urutan:</Text>
+        {([
+          ["newest", "Terbaru"],
+          ["price_asc", "Harga Terendah"],
+          ["price_desc", "Harga Tertinggi"],
+        ] as const).map(([val, label]) => (
+          <TouchableOpacity
+            key={val}
+            style={[styles.sortChip, sortMode === val && styles.sortChipActive]}
+            onPress={() => setSortMode(val)}
+          >
+            <Text style={[styles.sortChipText, sortMode === val && styles.sortChipTextActive]}>
+              {label}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </View>
+    </View>
+  );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.screen}>
       <FlatList
-        key={`category-grid-${columns}`}
-        data={sortedProducts}
-        keyExtractor={(item) => item.id.toString()}
+        key={`cat-grid-${columns}`}
+        data={products}
+        keyExtractor={(item) => String(item.id)}
         numColumns={columns}
-        columnWrapperStyle={styles.productRow}
-        contentContainerStyle={styles.productList}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <View>
-            <View style={styles.heading}>
-              <View style={styles.iconBox}>
-                <Ionicons name="grid-outline" size={22} color={Colors.burgundy} />
-              </View>
-              <View style={styles.headingCopy}>
-                <Text style={styles.eyebrow}>JELAJAHI KATEGORI</Text>
-                <Text style={styles.title}>{categoryTitle}</Text>
-              </View>
-              <View style={styles.countBadge}>
-                <Text style={styles.count}>{sortedProducts.length}</Text>
-              </View>
-            </View>
-            <ScrollView
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              contentContainerStyle={styles.sortOptions}
-            >
-              {([
-                ["recommended", "Rekomendasi"],
-                ["price-asc", "Harga terendah"],
-                ["price-desc", "Harga tertinggi"],
-              ] as const).map(([mode, label]) => (
-                <TouchableOpacity
-                  key={mode}
-                  onPress={() => setSortMode(mode)}
-                  style={[styles.sortChip, sortMode === mode && styles.sortChipActive]}
-                >
-                  <Text style={[styles.sortText, sortMode === mode && styles.sortTextActive]}>
-                    {label}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
+        columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
+        contentContainerStyle={styles.listContent}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={<Footer />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadProducts();
+            }}
+            tintColor={Colors.burgundy}
+          />
         }
+        renderItem={({ item }) => (
+          <View style={[styles.cardWrapper, { width: `${100 / columns}%` }]}>
+            <MarketplaceProductCard
+              product={item}
+              onPress={() => router.push(`/product/${item.id}`)}
+            />
+          </View>
+        )}
         ListEmptyComponent={
-          loading ? (
-            <View style={styles.empty}>
-              <Ionicons name="sync-outline" size={28} color={Colors.burgundy} />
-              <Text style={styles.emptyText}>Memuat produk...</Text>
-            </View>
-          ) : loadError ? (
-            <View style={styles.empty}>
-              <Ionicons name="cloud-offline-outline" size={32} color={Colors.muted} />
-              <Text style={styles.emptyTitle}>Kategori tidak dapat dimuat</Text>
-              <Text style={styles.emptyText}>Periksa koneksi dan coba lagi.</Text>
+          !loading ? (
+            <View style={styles.emptyBox}>
+              <Package size={52} color={Colors.mutedLight} />
+              <Text style={styles.emptyTitle}>Belum Ada Produk di Kategori Ini</Text>
+              <Text style={styles.emptySub}>
+                Produk untuk kategori {categoryTitle} sedang dipersiapkan oleh seller.
+              </Text>
             </View>
           ) : (
-            <View style={styles.empty}>
-              <Ionicons name="basket-outline" size={32} color={Colors.muted} />
-              <Text style={styles.emptyTitle}>Belum ada produk</Text>
-              <Text style={styles.emptyText}>Coba jelajahi kategori lainnya.</Text>
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={Colors.burgundy} />
+              <Text style={styles.loadingText}>Memuat produk kategori...</Text>
             </View>
           )
         }
-        renderItem={({ item, index }) => (
-          <Animated.View
-            entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 35)}
-            style={styles.cardWrap}
-          >
-            <MarketplaceProductCard
-              product={item}
-              compact
-              onPress={() => router.push(`/product/${item.id}`)}
-            />
-          </Animated.View>
-        )}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: Colors.ivory, flex: 1 },
-  productList: {
-    alignSelf: "center",
-    maxWidth: 1480,
-    paddingHorizontal: 18,
-    paddingBottom: 24,
-    width: "100%",
+  screen: {
+    flex: 1,
+    backgroundColor: Colors.ivory,
   },
-  heading: {
+  listContent: {
+    flexGrow: 1,
+  },
+  headerContainer: {
+    maxWidth: 1240,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 14,
+  },
+  backBtn: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 6,
+    marginBottom: 16,
+  },
+  backBtnText: {
+    color: Colors.burgundy,
+    fontSize: 13,
+    fontWeight: "600",
+  },
+  titleCard: {
     backgroundColor: Colors.white,
     borderColor: Colors.border,
-    borderRadius: 17,
     borderWidth: 1,
-    flexDirection: "row",
-    marginTop: 14,
-    marginBottom: 12,
-    padding: 15,
-  },
-  iconBox: {
-    alignItems: "center",
-    backgroundColor: Colors.ivory,
-    borderRadius: 13,
-    height: 46,
-    justifyContent: "center",
-    width: 46,
-  },
-  headingCopy: { flex: 1, marginLeft: 12 },
-  eyebrow: { color: Colors.gold, fontSize: 10, fontWeight: "700", letterSpacing: 1.1 },
-  title: { color: Colors.navy, fontSize: 19, fontWeight: "800", marginTop: 3 },
-  countBadge: {
-    alignItems: "center",
-    backgroundColor: Colors.ivory,
     borderRadius: 16,
-    height: 32,
-    justifyContent: "center",
-    minWidth: 32,
-    paddingHorizontal: 8,
+    padding: 20,
+    marginBottom: 16,
   },
-  count: { color: Colors.burgundy, fontSize: 12, fontWeight: "700" },
-  sortOptions: { gap: 7, paddingBottom: 12 },
+  badgeRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    marginBottom: 6,
+  },
+  badgeText: {
+    color: Colors.goldDark,
+    fontSize: 11,
+    fontWeight: "700",
+    textTransform: "uppercase",
+  },
+  categoryTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: Colors.navy,
+  },
+  categorySub: {
+    fontSize: 13,
+    color: Colors.muted,
+    marginTop: 4,
+  },
+  sortRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    flexWrap: "wrap",
+    paddingBottom: 10,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  sortLabel: {
+    fontSize: 12,
+    color: Colors.muted,
+    fontWeight: "600",
+  },
   sortChip: {
     backgroundColor: Colors.white,
     borderColor: Colors.border,
-    borderRadius: 17,
     borderWidth: 1,
-    paddingHorizontal: 11,
-    paddingVertical: 7,
+    paddingVertical: 5,
+    paddingHorizontal: 12,
+    borderRadius: 16,
   },
-  sortChipActive: { backgroundColor: Colors.burgundy, borderColor: Colors.burgundy },
-  sortText: { color: Colors.muted, fontSize: 10, fontWeight: "600" },
-  sortTextActive: { color: Colors.white },
-  productRow: { gap: 10, marginBottom: 10 },
-  cardWrap: { flex: 1 },
-  empty: { alignItems: "center", marginTop: 48, padding: 20 },
-  emptyTitle: { color: Colors.navy, fontSize: 15, fontWeight: "700", marginTop: 10 },
-  emptyText: { color: Colors.muted, fontSize: 12, marginTop: 6, textAlign: "center" },
+  sortChipActive: {
+    backgroundColor: Colors.burgundySubtle,
+    borderColor: Colors.burgundy,
+  },
+  sortChipText: {
+    fontSize: 12,
+    color: Colors.navy,
+    fontWeight: "500",
+  },
+  sortChipTextActive: {
+    color: Colors.burgundy,
+    fontWeight: "700",
+  },
+  gridRow: {
+    maxWidth: 1240,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    gap: 14,
+  },
+  cardWrapper: {
+    paddingBottom: 14,
+    paddingHorizontal: 4,
+  },
+  emptyBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 54,
+    paddingHorizontal: 20,
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: Colors.navy,
+    marginTop: 12,
+  },
+  emptySub: {
+    fontSize: 13,
+    color: Colors.muted,
+    textAlign: "center",
+    marginTop: 4,
+  },
+  loadingBox: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 13,
+    color: Colors.muted,
+    marginTop: 10,
+  },
 });

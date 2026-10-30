@@ -1,136 +1,354 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useFocusEffect, useRouter } from "expo-router";
 import React, { useCallback, useState } from "react";
 import {
+  ActivityIndicator,
   FlatList,
+  RefreshControl,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
-  useWindowDimensions,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
-import { MarketplaceProductCard } from "../../components/marketplace-product-card";
-import Colors from "../../constants/Colors";
+import { CheckCircle2, Heart, Package, ShoppingBag, ShoppingCart } from "lucide-react-native";
+import { Footer } from "../../components/Footer";
+import { MarketplaceProduct, MarketplaceProductCard } from "../../components/marketplace-product-card";
 import { BASE } from "../../constants/Api";
-
-const USER_ID = 1;
+import Colors, { Spacing, Typography } from "../../constants/Colors";
+import { useSessionUser } from "../../constants/session";
+import { useResponsive } from "../../hooks/useResponsive";
 
 export default function Wishlist() {
-  const [items, setItems] = useState<any[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState(false);
   const router = useRouter();
-  const { width } = useWindowDimensions();
-  const columns = width >= 1240 ? 6 : width >= 1000 ? 5 : width >= 780 ? 4 : width >= 360 ? 3 : 2;
+  const { isMobile, columns } = useResponsive();
+  const { user } = useSessionUser();
 
-  const load = async () => {
-    setLoading(true);
-    setLoadError(false);
+  const [items, setItems] = useState<MarketplaceProduct[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const loadWishlist = async () => {
+    if (!user?.id) {
+      setItems([]);
+      setLoading(false);
+      setRefreshing(false);
+      return;
+    }
+
     try {
-      const res = await fetch(`${BASE}?action=wishlist&user_id=${USER_ID}`);
-      if (!res.ok) throw new Error(`Wishlist request failed (${res.status})`);
-      const data = await res.json();
-      if (!Array.isArray(data)) throw new Error("Wishlist response was not a list");
-      setItems(data);
-    } catch (error) {
-      console.error(error);
-      setLoadError(true);
+      const res = await fetch(`${BASE}?action=wishlist&user_id=${user.id}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) setItems(data);
+      }
+    } catch (err) {
+      console.error(err);
     } finally {
       setLoading(false);
+      setRefreshing(false);
     }
   };
 
-  useFocusEffect(useCallback(() => { load(); }, []));
+  useFocusEffect(
+    useCallback(() => {
+      loadWishlist();
+    }, [user?.id])
+  );
 
-  const remove = async (productId: number) => {
+  const handleRemove = async (productId: number) => {
+    if (!user?.id) return;
     try {
-      const response = await fetch(
-        `${BASE}?action=remove_wishlist&user_id=${USER_ID}&product_id=${productId}`
-      );
-      if (!response.ok) throw new Error(`Removing wishlist item failed (${response.status})`);
-      await load();
-    } catch (error) {
-      console.error(error);
-    }
+      const res = await fetch(`${BASE}?action=remove_wishlist`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.id,
+          product_id: productId,
+        }),
+      });
+      if (res.ok) {
+        setItems((prev) => prev.filter((it) => Number(it.product_id || it.id) !== productId));
+        setToastMessage("Item dihapus dari Wishlist");
+        setTimeout(() => setToastMessage(null), 2500);
+      }
+    } catch {}
   };
+
+  const handleAddToCart = async (product: MarketplaceProduct) => {
+    if (!user?.id) {
+      router.push("/login");
+      return;
+    }
+    const pid = Number(product.product_id || product.id);
+    try {
+      const res = await fetch(`${BASE}?action=add_cart`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          user_id: user.id,
+          product_id: pid,
+          quantity: 1,
+        }),
+      });
+      if (res.ok) {
+        setToastMessage(`Ditambahkan ke Keranjang: ${product.name}`);
+        setTimeout(() => setToastMessage(null), 2500);
+      }
+    } catch {}
+  };
+
+  if (!user?.id) {
+    return (
+      <View style={styles.centerRoot}>
+        <Heart size={54} color={Colors.mutedLight} />
+        <Text style={styles.emptyTitle}>Masuk untuk Melihat Wishlist</Text>
+        <Text style={styles.emptySub}>
+          Simpan aneka produk sambal, batik, dan makanan khas Indonesia favorit Anda di sini.
+        </Text>
+        <TouchableOpacity style={styles.primaryBtn} onPress={() => router.push("/login")}>
+          <Text style={styles.primaryBtnText}>Masuk ke Akun</Text>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  const renderHeader = () => (
+    <View style={styles.headerBlock}>
+      <View style={styles.pageHeader}>
+        <View>
+          <Text style={styles.pageEyebrow}>Koleksi Disimpan</Text>
+          <Text style={styles.pageTitle}>Wishlist Saya ({items.length})</Text>
+        </View>
+        {items.length > 0 && (
+          <TouchableOpacity
+            style={styles.exploreMoreBtn}
+            onPress={() => router.push("/(tabs)/explore")}
+          >
+            <Text style={styles.exploreMoreText}>+ Tambah Produk Lain</Text>
+          </TouchableOpacity>
+        )}
+      </View>
+    </View>
+  );
 
   return (
-    <View style={styles.container}>
+    <View style={styles.screen}>
+      {toastMessage && (
+        <View style={styles.toast}>
+          <CheckCircle2 size={16} color={Colors.white} />
+          <Text style={styles.toastText}>{toastMessage}</Text>
+        </View>
+      )}
+
       <FlatList
         key={`wishlist-grid-${columns}`}
         data={items}
-        keyExtractor={(item) => item.product_id.toString()}
+        keyExtractor={(item) => String(item.product_id || item.id)}
         numColumns={columns}
-        columnWrapperStyle={styles.productRow}
-        contentContainerStyle={styles.productList}
-        showsVerticalScrollIndicator={false}
-        ListHeaderComponent={
-          <View style={styles.heading}>
-            <Text style={styles.eyebrow}>SIMPAN FAVORIT</Text>
-            <Text style={styles.title}>Wishlist Saya</Text>
-            <Text style={styles.subtitle}>Produk pilihan Anda, siap dilihat kembali.</Text>
-          </View>
+        columnWrapperStyle={columns > 1 ? styles.gridRow : undefined}
+        contentContainerStyle={styles.listContainer}
+        ListHeaderComponent={renderHeader}
+        ListFooterComponent={<Footer />}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadWishlist();
+            }}
+            tintColor={Colors.burgundy}
+          />
         }
-        ListEmptyComponent={
-          loading ? (
-            <View style={styles.empty}>
-              <Ionicons name="sync-outline" size={28} color={Colors.burgundy} />
-              <Text style={styles.emptyText}>Memuat wishlist...</Text>
+        renderItem={({ item }) => {
+          const pid = Number(item.product_id || item.id);
+          return (
+            <View style={[styles.cardWrapper, { width: `${100 / columns}%` }]}>
+              <MarketplaceProductCard
+                product={item}
+                onPress={() => router.push(`/product/${pid}`)}
+                onAddToCart={() => handleAddToCart(item)}
+                onRemove={() => handleRemove(pid)}
+                isWishlisted={true}
+              />
             </View>
-          ) : loadError ? (
-            <View style={styles.empty}>
-              <Ionicons name="cloud-offline-outline" size={34} color={Colors.muted} />
-              <Text style={styles.emptyTitle}>Wishlist tidak dapat dimuat</Text>
-              <Text style={styles.emptyText}>Periksa koneksi dan coba lagi.</Text>
-              <TouchableOpacity style={styles.retry} onPress={load}>
-                <Text style={styles.retryText}>Coba lagi</Text>
+          );
+        }}
+        ListEmptyComponent={
+          !loading ? (
+            <View style={styles.emptyContainer}>
+              <Heart size={54} color={Colors.mutedLight} />
+              <Text style={styles.emptyTitle}>Wishlist Anda Masih Kosong</Text>
+              <Text style={styles.emptySub}>
+                Belum ada produk yang disimpan. Jelajahi katalog produk Indonesia kami dan klik tanda hati untuk menyimpannya.
+              </Text>
+              <TouchableOpacity
+                style={styles.browseBtn}
+                onPress={() => router.push("/(tabs)/explore")}
+              >
+                <Text style={styles.browseBtnText}>Jelajahi Produk Sekarang</Text>
               </TouchableOpacity>
             </View>
           ) : (
-            <View style={styles.empty}>
-              <Ionicons name="heart-outline" size={34} color={Colors.muted} />
-              <Text style={styles.emptyTitle}>Wishlist kosong</Text>
-              <Text style={styles.emptyText}>Simpan produk favorit agar mudah ditemukan.</Text>
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={Colors.burgundy} />
+              <Text style={styles.loadingText}>Memuat wishlist...</Text>
             </View>
           )
         }
-        renderItem={({ item, index }) => (
-          <Animated.View
-            entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 35)}
-            style={styles.cardWrap}
-          >
-            <MarketplaceProductCard
-              product={{ ...item, id: item.product_id }}
-              compact
-              onRemove={() => remove(item.product_id)}
-              onPress={() => router.push(`/product/${item.product_id}`)}
-            />
-          </Animated.View>
-        )}
       />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: Colors.ivory, flex: 1 },
-  productList: {
-    alignSelf: "center",
-    maxWidth: 1120,
-    paddingHorizontal: 14,
-    paddingBottom: 24,
-    width: "100%",
+  screen: {
+    flex: 1,
+    backgroundColor: Colors.ivory,
   },
-  heading: { marginBottom: 18, paddingTop: 16 },
-  eyebrow: { color: Colors.gold, fontSize: 11, fontWeight: "700", letterSpacing: 1.3 },
-  title: { color: Colors.navy, fontSize: 26, fontWeight: "800", marginTop: 5 },
-  subtitle: { color: Colors.muted, fontSize: 13, marginTop: 4 },
-  productRow: { gap: 10, marginBottom: 10 },
-  cardWrap: { flex: 1 },
-  empty: { alignItems: "center", marginTop: 48, padding: 20 },
-  emptyTitle: { color: Colors.navy, fontSize: 16, fontWeight: "700", marginTop: 12 },
-  emptyText: { color: Colors.muted, fontSize: 12, marginTop: 6, textAlign: "center" },
-  retry: { backgroundColor: Colors.burgundy, borderRadius: 9, marginTop: 12, paddingHorizontal: 14, paddingVertical: 8 },
-  retryText: { color: Colors.white, fontSize: 12, fontWeight: "700" },
+  listContainer: {
+    flexGrow: 1,
+  },
+  centerRoot: {
+    flex: 1,
+    backgroundColor: Colors.ivory,
+    alignItems: "center",
+    justifyContent: "center",
+    padding: 24,
+  },
+  emptyTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: Colors.navy,
+    marginTop: 16,
+    marginBottom: 6,
+  },
+  emptySub: {
+    fontSize: 13,
+    color: Colors.muted,
+    textAlign: "center",
+    maxWidth: 360,
+    lineHeight: 18,
+    marginBottom: 20,
+  },
+  primaryBtn: {
+    backgroundColor: Colors.burgundy,
+    paddingVertical: 12,
+    paddingHorizontal: 24,
+    borderRadius: 20,
+  },
+  primaryBtnText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  headerBlock: {
+    maxWidth: 1240,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingTop: 20,
+    paddingBottom: 12,
+  },
+  pageHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-end",
+    paddingBottom: 14,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  pageEyebrow: {
+    fontSize: 12,
+    color: Colors.goldDark,
+    fontWeight: "700",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  pageTitle: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: Colors.navy,
+    marginTop: 2,
+  },
+  exploreMoreBtn: {
+    backgroundColor: Colors.burgundySubtle,
+    borderColor: Colors.burgundy,
+    borderWidth: 1,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  exploreMoreText: {
+    color: Colors.burgundy,
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  gridRow: {
+    maxWidth: 1240,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    gap: 14,
+  },
+  cardWrapper: {
+    paddingBottom: 14,
+    paddingHorizontal: 4,
+  },
+  loadingBox: {
+    paddingVertical: 48,
+    alignItems: "center",
+  },
+  loadingText: {
+    fontSize: 13,
+    color: Colors.muted,
+    marginTop: 10,
+  },
+  emptyContainer: {
+    maxWidth: 500,
+    width: "100%",
+    alignSelf: "center",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 64,
+    backgroundColor: Colors.white,
+    borderRadius: 16,
+    borderColor: Colors.border,
+    borderWidth: 1,
+    paddingHorizontal: 24,
+    marginVertical: 40,
+  },
+  browseBtn: {
+    backgroundColor: Colors.burgundy,
+    paddingVertical: 12,
+    paddingHorizontal: 22,
+    borderRadius: 20,
+  },
+  browseBtnText: {
+    color: Colors.white,
+    fontSize: 14,
+    fontWeight: "700",
+  },
+  toast: {
+    position: "absolute",
+    top: 20,
+    alignSelf: "center",
+    zIndex: 999,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: Colors.navy,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 24,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  toastText: {
+    color: Colors.white,
+    fontSize: 13,
+    fontWeight: "600",
+  },
 });

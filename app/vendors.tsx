@@ -1,17 +1,40 @@
-import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
+  ActivityIndicator,
   Image,
+  RefreshControl,
   ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
   View,
 } from "react-native";
-import Animated, { FadeInDown } from "react-native-reanimated";
-import Colors from "../constants/Colors";
+import {
+  CheckCircle2,
+  ChevronRight,
+  Clock,
+  MapPin,
+  Phone,
+  ShieldCheck,
+  Star,
+  Store,
+  Truck,
+} from "lucide-react-native";
+import { Footer } from "../components/Footer";
 import { BASE } from "../constants/Api";
+import Colors from "../constants/Colors";
+import { formatRating } from "../constants/format";
+import { useResponsive } from "../hooks/useResponsive";
+
+type HKStore = {
+  id: number;
+  name: string;
+  district?: string;
+  address_line: string;
+  phone?: string;
+  opening_hours?: string;
+};
 
 type Vendor = {
   id: number | string;
@@ -25,155 +48,485 @@ type Vendor = {
 };
 
 export default function Vendors() {
+  const router = useRouter();
+  const { isDesktop } = useResponsive();
+
+  const [activeTab, setActiveTab] = useState<"hk_stores" | "vendors">("hk_stores");
+  const [hkStores, setHkStores] = useState<HKStore[]>([]);
   const [vendors, setVendors] = useState<Vendor[]>([]);
   const [loading, setLoading] = useState(true);
-  const [error, setError] = useState(false);
-  const router = useRouter();
+  const [refreshing, setRefreshing] = useState(false);
 
-  const load = () => {
+  const loadData = async () => {
     setLoading(true);
-    setError(false);
-    fetch(`${BASE}?action=vendors`)
-      .then((response) => {
-        if (!response.ok) throw new Error(`Vendors request failed (${response.status})`);
-        return response.json();
-      })
-      .then((data) => {
-        if (!Array.isArray(data)) throw new Error("Vendors response was not a list");
-        setVendors(data);
-      })
-      .catch((reason) => {
-        console.error(reason);
-        setError(true);
-      })
-      .finally(() => setLoading(false));
+    try {
+      const [storesRes, vendorsRes] = await Promise.all([
+        fetch(`${BASE}?action=hk_stores`),
+        fetch(`${BASE}?action=vendors`),
+      ]);
+      if (storesRes.ok) {
+        const storeData = await storesRes.json();
+        if (Array.isArray(storeData)) setHkStores(storeData);
+      }
+      if (vendorsRes.ok) {
+        const vendorData = await vendorsRes.json();
+        if (Array.isArray(vendorData)) setVendors(vendorData);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
   };
 
   useEffect(() => {
-    load();
+    loadData();
   }, []);
 
   return (
-    <ScrollView style={styles.container} contentContainerStyle={styles.content}>
-      <View style={styles.heading}>
-        <Text style={styles.eyebrow}>SELLER TERVERIFIKASI</Text>
-        <Text style={styles.title}>Toko pilihan</Text>
-        <Text style={styles.subtitle}>
-          Kenali seller terpercaya dan jelajahi koleksi mereka.
-        </Text>
-      </View>
-      {loading ? (
-        <View style={styles.empty}>
-          <Ionicons name="sync-outline" size={30} color={Colors.burgundy} />
-          <Text style={styles.emptyText}>Memuat toko...</Text>
-        </View>
-      ) : error ? (
-        <View style={styles.empty}>
-          <Ionicons name="cloud-offline-outline" size={34} color={Colors.muted} />
-          <Text style={styles.emptyTitle}>Toko tidak dapat dimuat</Text>
-          <Text style={styles.emptyText}>Periksa koneksi lalu coba lagi.</Text>
-          <TouchableOpacity style={styles.retryButton} onPress={load}>
-            <Text style={styles.retryText}>Coba lagi</Text>
-          </TouchableOpacity>
-        </View>
-      ) : vendors.length === 0 ? (
-        <View style={styles.empty}>
-          <Ionicons name="storefront-outline" size={34} color={Colors.muted} />
-          <Text style={styles.emptyTitle}>Belum ada toko</Text>
-        </View>
-      ) : (
-        vendors.map((vendor, index) => (
-          <Animated.View
-            entering={FadeInDown.duration(320).delay(Math.min(index, 6) * 40)}
-            key={vendor.id}
-          >
+    <View style={styles.screen}>
+      <ScrollView
+        contentContainerStyle={styles.scrollRoot}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={() => {
+              setRefreshing(true);
+              loadData();
+            }}
+            tintColor={Colors.burgundy}
+          />
+        }
+      >
+        <View style={styles.container}>
+          {/* Header */}
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.eyebrow}>JARINGAN MITRA RESMI HONG KONG & INDONESIA</Text>
+              <Text style={styles.title}>Toko Mitra HK & Vendor Pilihan</Text>
+              <Text style={styles.subtitle}>
+                Temukan lokasi pengambilan pesanan di Hong Kong atau jelajahi seller UMKM binaan resmi di Indonesia.
+              </Text>
+            </View>
+          </View>
+
+          {/* Tab Selector */}
+          <View style={styles.tabsRow}>
             <TouchableOpacity
-              style={styles.vendorCard}
-              onPress={() =>
-                router.push({ pathname: "/vendor/[slug]", params: { slug: vendor.slug } })
-              }
-              activeOpacity={0.8}
+              style={[styles.tabBtn, activeTab === "hk_stores" && styles.tabBtnActive]}
+              onPress={() => setActiveTab("hk_stores")}
             >
-              {vendor.logo_url ? (
-                <Image source={{ uri: vendor.logo_url }} style={styles.logo} />
-              ) : (
-                <View style={styles.logoPlaceholder}>
-                  <Ionicons name="storefront-outline" size={25} color={Colors.burgundy} />
-                </View>
-              )}
-              <View style={styles.vendorCopy}>
-                <View style={styles.vendorNameRow}>
-                  <Text numberOfLines={1} style={styles.vendorName}>{vendor.store_name}</Text>
-                  <Ionicons name="checkmark-circle" size={16} color={Colors.burgundy} />
-                </View>
-                {!!vendor.origin_city && (
-                  <View style={styles.cityRow}>
-                    <Ionicons name="location-outline" size={13} color={Colors.muted} />
-                    <Text style={styles.city}>{vendor.origin_city}</Text>
-                  </View>
-                )}
-                <View style={styles.ratingRow}>
-                  <Ionicons name="star" size={13} color={Colors.gold} />
-                  <Text style={styles.rating}>
-                    {Number(vendor.rating_avg ?? 0).toFixed(1)}
-                  </Text>
-                  <Text style={styles.ratingCount}>
-                    ({Number(vendor.rating_count ?? 0).toLocaleString("id-ID")} ulasan)
-                  </Text>
-                </View>
-                {!!vendor.description && (
-                  <Text numberOfLines={2} style={styles.description}>
-                    {vendor.description}
-                  </Text>
-                )}
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={Colors.muted} />
+              <Store size={18} color={activeTab === "hk_stores" ? Colors.white : Colors.navy} />
+              <Text style={[styles.tabBtnText, activeTab === "hk_stores" && styles.tabBtnTextActive]}>
+                Toko Mitra Hong Kong (Pickup Point)
+              </Text>
             </TouchableOpacity>
-          </Animated.View>
-        ))
-      )}
-    </ScrollView>
+
+            <TouchableOpacity
+              style={[styles.tabBtn, activeTab === "vendors" && styles.tabBtnActive]}
+              onPress={() => setActiveTab("vendors")}
+            >
+              <ShieldCheck size={18} color={activeTab === "vendors" ? Colors.white : Colors.navy} />
+              <Text style={[styles.tabBtnText, activeTab === "vendors" && styles.tabBtnTextActive]}>
+                Vendor Terverifikasi dari Indonesia
+              </Text>
+            </TouchableOpacity>
+          </View>
+
+          {loading ? (
+            <View style={styles.loadingBox}>
+              <ActivityIndicator size="large" color={Colors.burgundy} />
+              <Text style={styles.loadingText}>Memuat jaringan toko...</Text>
+            </View>
+          ) : activeTab === "hk_stores" ? (
+            /* HK Stores Grid */
+            <View style={styles.cardsGrid}>
+              {hkStores.map((store) => (
+                <View key={store.id} style={[styles.storeCard, isDesktop && styles.storeCardDesktop]}>
+                  <View style={styles.storeCardTop}>
+                    <View style={styles.storeLogoBox}>
+                      <Store size={26} color={Colors.burgundy} />
+                    </View>
+                    <View style={styles.storeMainMeta}>
+                      <View style={styles.storeNameRow}>
+                        <Text style={styles.storeName}>{store.name}</Text>
+                        <CheckCircle2 size={15} color={Colors.verifiedBadge} />
+                      </View>
+                      {store.district && (
+                        <View style={styles.districtBadge}>
+                          <Text style={styles.districtText}>Distrik: {store.district}</Text>
+                        </View>
+                      )}
+                    </View>
+                  </View>
+
+                  <View style={styles.storeInfoRows}>
+                    <View style={styles.infoRow}>
+                      <MapPin size={16} color={Colors.burgundy} />
+                      <Text style={styles.infoText}>{store.address_line}</Text>
+                    </View>
+
+                    {store.phone && (
+                      <View style={styles.infoRow}>
+                        <Phone size={15} color={Colors.muted} />
+                        <Text style={styles.infoText}>{store.phone}</Text>
+                      </View>
+                    )}
+
+                    {store.opening_hours && (
+                      <View style={styles.infoRow}>
+                        <Clock size={15} color={Colors.goldDark} />
+                        <Text style={styles.infoHoursText}>{store.opening_hours}</Text>
+                      </View>
+                    )}
+                  </View>
+
+                  <View style={styles.pickupPerksRow}>
+                    <View style={styles.perkPill}>
+                      <Text style={styles.perkText}>✓ Bebas Biaya Ambil</Text>
+                    </View>
+                    <View style={styles.perkPill}>
+                      <Text style={styles.perkText}>✓ Konfirmasi WhatsApp</Text>
+                    </View>
+                  </View>
+                </View>
+              ))}
+            </View>
+          ) : (
+            /* Indonesian Vendors Grid */
+            <View style={styles.cardsGrid}>
+              {vendors.map((vendor) => (
+                <View key={vendor.id} style={[styles.vendorCard, isDesktop && styles.storeCardDesktop]}>
+                  <View style={styles.vendorCardTop}>
+                    <View style={styles.vendorLogoCircle}>
+                      <Store size={24} color={Colors.burgundy} />
+                    </View>
+                    <View style={styles.vendorMetaCol}>
+                      <View style={styles.vendorNameRow}>
+                        <Text style={styles.vendorCardName}>{vendor.store_name}</Text>
+                        <CheckCircle2 size={15} color={Colors.verifiedBadge} />
+                      </View>
+                      <Text style={styles.vendorOriginCity}>
+                        Kota Asal: {vendor.origin_city || "Indonesia"}
+                      </Text>
+                    </View>
+
+                    <View style={styles.ratingBadge}>
+                      <Star size={12} color={Colors.gold} fill={Colors.gold} />
+                      <Text style={styles.ratingText}>
+                        {formatRating(vendor.rating_avg || "4.9")}
+                      </Text>
+                    </View>
+                  </View>
+
+                  <Text style={styles.vendorDesc} numberOfLines={3}>
+                    {vendor.description ||
+                      "Mitra produsen terpercaya binaan Chandra Mall yang menghadirkan produk pangan, sambal, dan kerajinan khas Indonesia berstandar mutu tinggi."}
+                  </Text>
+
+                  <View style={styles.vendorCardFooter}>
+                    <View style={styles.exportTag}>
+                      <Truck size={13} color={Colors.goldDark} />
+                      <Text style={styles.exportTagText}>Siap Kirim ke HK</Text>
+                    </View>
+
+                    <TouchableOpacity
+                      style={styles.visitStoreBtn}
+                      onPress={() => router.push(`/vendor/${vendor.slug || vendor.id}`)}
+                    >
+                      <Text style={styles.visitStoreBtnText}>Lihat Katalog</Text>
+                      <ChevronRight size={15} color={Colors.burgundy} />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+        </View>
+
+        <Footer />
+      </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { backgroundColor: Colors.ivory, flex: 1 },
-  content: { alignSelf: "center", maxWidth: 900, padding: 16, paddingBottom: 30, width: "100%" },
-  heading: { marginBottom: 18, paddingTop: 6 },
-  eyebrow: { color: Colors.gold, fontSize: 10, fontWeight: "700", letterSpacing: 1.2 },
-  title: { color: Colors.navy, fontSize: 26, fontWeight: "800", marginTop: 5 },
-  subtitle: { color: Colors.muted, fontSize: 12, marginTop: 5 },
-  vendorCard: {
+  screen: {
+    flex: 1,
+    backgroundColor: Colors.ivory,
+  },
+  scrollRoot: {
+    flexGrow: 1,
+  },
+  container: {
+    maxWidth: 1240,
+    width: "100%",
+    alignSelf: "center",
+    paddingHorizontal: 16,
+    paddingTop: 24,
+    paddingBottom: 40,
+  },
+  header: {
+    marginBottom: 20,
+    paddingBottom: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: Colors.border,
+  },
+  eyebrow: {
+    fontSize: 11,
+    fontWeight: "800",
+    color: Colors.goldDark,
+    letterSpacing: 0.8,
+  },
+  title: {
+    fontSize: 26,
+    fontWeight: "800",
+    color: Colors.navy,
+    marginTop: 4,
+    marginBottom: 6,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: Colors.muted,
+    lineHeight: 18,
+    maxWidth: 620,
+  },
+  tabsRow: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
+    marginBottom: 24,
+  },
+  tabBtn: {
+    flexDirection: "row",
     alignItems: "center",
+    gap: 8,
     backgroundColor: Colors.white,
     borderColor: Colors.border,
-    borderRadius: 15,
     borderWidth: 1,
-    flexDirection: "row",
-    marginBottom: 11,
-    padding: 13,
+    paddingVertical: 10,
+    paddingHorizontal: 18,
+    borderRadius: 24,
   },
-  logo: { backgroundColor: Colors.ivory, borderRadius: 13, height: 58, width: 58 },
-  logoPlaceholder: {
+  tabBtnActive: {
+    backgroundColor: Colors.burgundy,
+    borderColor: Colors.burgundy,
+  },
+  tabBtnText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: Colors.navy,
+  },
+  tabBtnTextActive: {
+    color: Colors.white,
+    fontWeight: "700",
+  },
+  loadingBox: {
+    paddingVertical: 48,
     alignItems: "center",
-    backgroundColor: Colors.ivory,
-    borderRadius: 13,
-    height: 58,
-    justifyContent: "center",
-    width: 58,
   },
-  vendorCopy: { flex: 1, marginHorizontal: 12 },
-  vendorNameRow: { alignItems: "center", flexDirection: "row", gap: 5 },
-  vendorName: { color: Colors.navy, flexShrink: 1, fontSize: 14, fontWeight: "700" },
-  cityRow: { alignItems: "center", flexDirection: "row", marginTop: 5 },
-  city: { color: Colors.muted, fontSize: 10, marginLeft: 3 },
-  ratingRow: { alignItems: "center", flexDirection: "row", marginTop: 5 },
-  rating: { color: Colors.navy, fontSize: 11, fontWeight: "700", marginLeft: 4 },
-  ratingCount: { color: Colors.muted, fontSize: 10, marginLeft: 4 },
-  description: { color: Colors.muted, fontSize: 11, lineHeight: 15, marginTop: 6 },
-  empty: { alignItems: "center", marginTop: 46, padding: 20 },
-  emptyTitle: { color: Colors.navy, fontSize: 15, fontWeight: "700", marginTop: 10 },
-  emptyText: { color: Colors.muted, fontSize: 12, marginTop: 6 },
-  retryButton: { backgroundColor: Colors.burgundy, borderRadius: 9, marginTop: 12, paddingHorizontal: 14, paddingVertical: 8 },
-  retryText: { color: Colors.white, fontSize: 12, fontWeight: "700" },
+  loadingText: {
+    fontSize: 13,
+    color: Colors.muted,
+    marginTop: 10,
+  },
+  cardsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 16,
+  },
+  storeCard: {
+    width: "100%",
+    backgroundColor: Colors.white,
+    borderColor: Colors.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: Colors.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+    justifyContent: "space-between",
+  },
+  storeCardDesktop: {
+    width: "48.8%",
+  },
+  storeCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    marginBottom: 14,
+  },
+  storeLogoBox: {
+    width: 48,
+    height: 48,
+    borderRadius: 14,
+    backgroundColor: Colors.burgundySubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  storeMainMeta: {
+    flex: 1,
+  },
+  storeNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  storeName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.navy,
+  },
+  districtBadge: {
+    backgroundColor: Colors.goldSubtle,
+    borderColor: Colors.gold,
+    borderWidth: 0.8,
+    paddingVertical: 2,
+    paddingHorizontal: 8,
+    borderRadius: 10,
+    alignSelf: "flex-start",
+    marginTop: 4,
+  },
+  districtText: {
+    color: Colors.goldDark,
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  storeInfoRows: {
+    gap: 8,
+    marginBottom: 14,
+  },
+  infoRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+  },
+  infoText: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    flex: 1,
+  },
+  infoHoursText: {
+    fontSize: 12,
+    color: Colors.goldDark,
+    fontWeight: "600",
+  },
+  pickupPerksRow: {
+    flexDirection: "row",
+    gap: 8,
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  perkPill: {
+    backgroundColor: Colors.ivory,
+    paddingVertical: 3,
+    paddingHorizontal: 8,
+    borderRadius: 6,
+  },
+  perkText: {
+    fontSize: 11,
+    color: Colors.success,
+    fontWeight: "600",
+  },
+  vendorCard: {
+    width: "100%",
+    backgroundColor: Colors.white,
+    borderColor: Colors.border,
+    borderWidth: 1,
+    borderRadius: 16,
+    padding: 18,
+    shadowColor: Colors.navy,
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 6,
+    elevation: 2,
+  },
+  vendorCardTop: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 10,
+  },
+  vendorLogoCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: Colors.burgundySubtle,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  vendorMetaCol: {
+    flex: 1,
+  },
+  vendorNameRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  vendorCardName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: Colors.navy,
+  },
+  vendorOriginCity: {
+    fontSize: 11,
+    color: Colors.muted,
+    marginTop: 2,
+  },
+  ratingBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.goldSubtle,
+    paddingVertical: 3,
+    paddingHorizontal: 7,
+    borderRadius: 6,
+  },
+  ratingText: {
+    color: Colors.goldDark,
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  vendorDesc: {
+    fontSize: 12,
+    color: Colors.textSecondary,
+    lineHeight: 17,
+    marginBottom: 14,
+  },
+  vendorCardFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 10,
+    borderTopWidth: 1,
+    borderTopColor: Colors.borderLight,
+  },
+  exportTag: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  exportTagText: {
+    fontSize: 11,
+    color: Colors.goldDark,
+    fontWeight: "700",
+  },
+  visitStoreBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: Colors.burgundySubtle,
+    paddingVertical: 6,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  visitStoreBtnText: {
+    color: Colors.burgundy,
+    fontSize: 12,
+    fontWeight: "700",
+  },
 });
