@@ -54,127 +54,126 @@ export function MarketplaceProductCard({
   const isOutOfStock = stockNum <= 0;
 
   return (
-    <TouchableOpacity
-      style={styles.card}
-      activeOpacity={0.88}
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`Lihat detail ${product.name}`}
-    >
-      {/* Product Image + Badges */}
-      <View style={styles.imageContainer}>
-        {product.image_url ? (
-          <Image
-            source={{ uri: product.image_url }}
-            style={styles.image}
-            resizeMode="cover"
-          />
-        ) : (
-          <View style={[styles.image, styles.imagePlaceholder]}>
-            <ImageIcon size={32} color={Colors.mutedLight} />
-          </View>
-        )}
-
-        {/* Export to HK Badge */}
-        {isExportReady && (
-          <View style={styles.exportBadge}>
-            <Text style={styles.exportBadgeText}>Siap Kirim HK</Text>
-          </View>
-        )}
-
-        {/* Wishlist Button Overlay */}
-        {onToggleWishlist && (
-          <TouchableOpacity
-            style={styles.wishlistBtn}
-            onPress={(e) => {
-              e.stopPropagation();
-              onToggleWishlist();
-            }}
-            accessibilityRole="button"
-            accessibilityLabel="Simpan ke wishlist"
-          >
-            <Heart
-              size={16}
-              color={isWishlisted ? Colors.burgundy : Colors.muted}
-              fill={isWishlisted ? Colors.burgundy : "transparent"}
+    <View style={styles.card}>
+      <TouchableOpacity
+        style={styles.cardTouchable}
+        activeOpacity={0.88}
+        onPress={onPress}
+        accessibilityRole="button"
+        accessibilityLabel={`Lihat detail ${product.name}`}
+      >
+        {/* Product Image + Badges */}
+        <View style={styles.imageContainer}>
+          {product.image_url ? (
+            <Image
+              source={{ uri: product.image_url }}
+              style={styles.image}
+              resizeMode="cover"
             />
-          </TouchableOpacity>
-        )}
-      </View>
+          ) : (
+            <View style={[styles.image, styles.imagePlaceholder]}>
+              <ImageIcon size={32} color={Colors.mutedLight} />
+            </View>
+          )}
 
-      {/* Details Container */}
-      <View style={[styles.details, compact && styles.compactDetails]}>
-        {/* Vendor Row */}
-        {!!product.vendor_name && (
-          <View style={styles.vendorRow}>
-            <Text style={styles.vendorName} numberOfLines={1}>
-              {product.vendor_name}
-            </Text>
-            {isVerified && (
-              <CheckCircle2 size={12} color={Colors.verifiedBadge} style={styles.verifiedIcon} />
-            )}
-          </View>
-        )}
-
-        {/* Title */}
-        <Text numberOfLines={2} style={styles.name}>
-          {product.name}
-        </Text>
-
-        {/* Rating and Weight Meta */}
-        <View style={styles.metaRow}>
-          <View style={styles.ratingBadge}>
-            <Star size={11} color={Colors.gold} fill={Colors.gold} />
-            <Text style={styles.ratingText}>{rating}</Text>
-          </View>
-          {!!product.weight_grams && (
-            <Text style={styles.weightText}>{product.weight_grams}g</Text>
+          {/* Export to HK Badge */}
+          {isExportReady && (
+            <View style={styles.exportBadge}>
+              <Text style={styles.exportBadgeText}>Siap Kirim HK</Text>
+            </View>
           )}
         </View>
 
-        {/* Price & Action Row */}
-        <View style={styles.footerRow}>
-          <View>
-            <Text style={styles.price}>{formatPrice(product.price)}</Text>
-            {isOutOfStock ? (
-              <Text style={styles.stockEmpty}>Stok Habis</Text>
-            ) : (
-              <Text style={styles.stockText}>Tersedia</Text>
+        {/* Details Container */}
+        <View style={[styles.details, compact && styles.compactDetails]}>
+          {/* Vendor Row */}
+          {!!product.vendor_name && (
+            <View style={styles.vendorRow}>
+              <Text style={styles.vendorName} numberOfLines={1}>
+                {product.vendor_name}
+              </Text>
+              {isVerified && (
+                <CheckCircle2 size={12} color={Colors.verifiedBadge} style={styles.verifiedIcon} />
+              )}
+            </View>
+          )}
+
+          {/* Title */}
+          <Text numberOfLines={2} style={styles.name}>
+            {product.name}
+          </Text>
+
+          {/* Rating and Weight Meta */}
+          <View style={styles.metaRow}>
+            <View style={styles.ratingBadge}>
+              <Star size={11} color={Colors.gold} fill={Colors.gold} />
+              <Text style={styles.ratingText}>{rating}</Text>
+            </View>
+            {!!product.weight_grams && (
+              <Text style={styles.weightText}>{product.weight_grams}g</Text>
             )}
           </View>
-
-          {onAddToCart && !isOutOfStock && (
-            <TouchableOpacity
-              style={styles.cartBtn}
-              onPress={(e) => {
-                e.stopPropagation();
-                onAddToCart();
-              }}
-              accessibilityRole="button"
-              accessibilityLabel={`Tambah ${product.name} ke keranjang`}
-            >
-              <ShoppingCart size={15} color={Colors.white} />
-            </TouchableOpacity>
-          )}
         </View>
+      </TouchableOpacity>
 
-        {/* Remove Button (for Wishlist page) */}
-        {onRemove && (
+      {/* Wishlist Button Overlay (Sibling, not nested in card button) */}
+      {onToggleWishlist && (
+        <TouchableOpacity
+          style={styles.wishlistBtn}
+          onPress={onToggleWishlist}
+          accessibilityRole="button"
+          accessibilityLabel="Simpan ke wishlist"
+          hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+        >
+          <Heart
+            size={16}
+            color={isWishlisted ? Colors.burgundy : Colors.muted}
+            fill={isWishlisted ? Colors.burgundy : "transparent"}
+          />
+        </TouchableOpacity>
+      )}
+
+      {/* Price & Action Row (Non-nested container) */}
+      <View style={[styles.footerRow, compact && styles.compactFooter]}>
+        <TouchableOpacity
+          style={styles.priceContainer}
+          onPress={onPress}
+          activeOpacity={0.88}
+        >
+          <Text style={styles.price}>{formatPrice(product.price)}</Text>
+          {isOutOfStock ? (
+            <Text style={styles.stockEmpty}>Stok Habis</Text>
+          ) : (
+            <Text style={styles.stockText}>Tersedia</Text>
+          )}
+        </TouchableOpacity>
+
+        {onAddToCart && !isOutOfStock && (
           <TouchableOpacity
-            style={styles.removeBtn}
-            onPress={(e) => {
-              e.stopPropagation();
-              onRemove();
-            }}
+            style={styles.cartBtn}
+            onPress={onAddToCart}
             accessibilityRole="button"
-            accessibilityLabel={`Hapus ${product.name}`}
+            accessibilityLabel={`Tambah ${product.name} ke keranjang`}
+            hitSlop={{ top: 6, bottom: 6, left: 6, right: 6 }}
           >
-            <Trash2 size={13} color={Colors.error} />
-            <Text style={styles.removeText}>Hapus</Text>
+            <ShoppingCart size={15} color={Colors.white} />
           </TouchableOpacity>
         )}
       </View>
-    </TouchableOpacity>
+
+      {/* Remove Button (for Wishlist page) */}
+      {onRemove && (
+        <TouchableOpacity
+          style={styles.removeBtn}
+          onPress={onRemove}
+          accessibilityRole="button"
+          accessibilityLabel={`Hapus ${product.name}`}
+        >
+          <Trash2 size={13} color={Colors.error} />
+          <Text style={styles.removeText}>Hapus</Text>
+        </TouchableOpacity>
+      )}
+    </View>
   );
 }
 
@@ -190,6 +189,12 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.05,
     shadowRadius: 6,
     elevation: 2,
+    flex: 1,
+    display: "flex",
+    flexDirection: "column",
+    position: "relative",
+  },
+  cardTouchable: {
     flex: 1,
     display: "flex",
     flexDirection: "column",
@@ -228,6 +233,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 8,
     right: 8,
+    zIndex: 10,
     width: 30,
     height: 30,
     borderRadius: 15,
@@ -241,12 +247,15 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   details: {
-    padding: 12,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    paddingBottom: 4,
     flex: 1,
-    justifyContent: "space-between",
   },
   compactDetails: {
-    padding: 8,
+    paddingHorizontal: 8,
+    paddingTop: 8,
+    paddingBottom: 4,
   },
   vendorRow: {
     flexDirection: "row",
@@ -275,7 +284,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     gap: 8,
     marginTop: 6,
-    marginBottom: 8,
+    marginBottom: 4,
   },
   ratingBadge: {
     flexDirection: "row",
@@ -301,8 +310,18 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "flex-end",
     justifyContent: "space-between",
-    marginTop: "auto",
+    paddingHorizontal: 12,
+    paddingBottom: 12,
     paddingTop: 4,
+    marginTop: "auto",
+  },
+  compactFooter: {
+    paddingHorizontal: 8,
+    paddingBottom: 8,
+  },
+  priceContainer: {
+    flex: 1,
+    paddingRight: 6,
   },
   price: {
     color: Colors.burgundy,
@@ -338,7 +357,8 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
-    marginTop: 8,
+    marginHorizontal: 12,
+    marginBottom: 10,
     paddingTop: 6,
     borderTopWidth: 1,
     borderTopColor: Colors.borderLight,

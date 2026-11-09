@@ -463,7 +463,11 @@ export default function Cart() {
                     ]}
                     onPress={() => {
                       if (selectedItems.length > 0) {
-                        router.push("/checkout");
+                        const selectedPids = Array.from(selectedIds).join(",");
+                        router.push({
+                          pathname: "/checkout",
+                          params: { items: selectedPids },
+                        });
                       }
                     }}
                     disabled={selectedItems.length === 0}

@@ -1,0 +1,339 @@
+================================================================================
+REKAPAN PENGECEKAN: LAPORAN VS IMPLEMENTASI PROJECT
+Tanggal Audit: 09 November 2026
+File Acuan   : project-docs/KP_160423183_Hans Aristo Cavell_160423003_Laurentius Deaven Geoffrey Candra.md
+Auditor      : Senior System Auditor & Code Reviewer
+================================================================================
+
+1. RINGKASAN HASIL PENGECEKAN
+--------------------------------------------------------------------------------
+- Total Klaim Diperiksa    : 58 Poin
+- Sesuai (Valid)           : 42 Poin (72.4%)
+- Tidak Sesuai (Mismatch)  : 11 Poin (19.0%)
+- Belum Diimplementasi     : 5 Poin  (8.6%)
+- Tingkat Kesesuaian (%)   : 72.4%
+
+Catatan Ringkas:
+Aplikasi frontend (React Native / Expo SDK 54) dan backend API (PHP Native + MySQL)
+telah terimplementasi dengan baik dan memiliki fitur lebih mutakhir dibandingkan isi
+laporan. Namun, terdapat ketidaksinkronan teoritis di Bab 2 & 3 (penyebutan Laravel),
+perbedaan struktur kamus data pada tabel transaksi (orders, order_vendor_groups,
+order_items), serta bagian Bab 5 dan Bab 6 pada dokumen laporan yang masih terpotong/
+belum selesai ditulis.
+
+
+2. DAFTAR KETIDAKSESUAIAN (DISCREPANCIES)
+--------------------------------------------------------------------------------
+
+[SEVERITY: HIGH]
+- Poin Laporan  : Bab 2.3 (baris 324-340) & Bab 3.3.2 (baris 452)
+                  Dokumen menyatakan bahwa sistem dibangun menggunakan "Framework Laravel"
+                  dengan arsitektur MVC, Eloquent ORM, Blade templating, routing, dan
+                  middleware.
+- Kondisi Kode  : Workspace sama sekali TIDAK menggunakan Laravel (0% kode Laravel).
+                  Frontend dibangun menggunakan React Native (0.81.5), Expo SDK (~54.0.36),
+                  Expo Router (~6.0.24) berbasis TypeScript.
+                  Backend dibangun menggunakan PHP Native/Procedural (project-docs/db.php)
+                  dengan MySQLi langsung.
+- Lokasi File   : - project-docs/KP_160423183_...md (L324-L340, L452)
+                  - package.json (L1-L49)
+                  - project-docs/db.php (L1-L846)
+- Detail Masalah: Terdapat inkonsistensi internal di dalam dokumen sendiri. Bab 2 & 3
+                  membahas Laravel, namun Bab 5 (L956) dan Bab 7 (L1167) mengakui React
+                  Native dan PHP native. Jika penguji membaca Bab 2, ini akan menjadi
+                  pertanyaan fatal karena teknologi yang dipakai sangat berbeda.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: HIGH]
+- Poin Laporan  : Bab 4.1.2 Kamus Data - Tabel 4.10 (Tabel orders, baris 627-643)
+                  Mencantumkan kolom "hk_store_id BIGINT(20) UNSIGNED" sebagai foreign
+                  key ke tabel hk_stores untuk titik pengambilan barang.
+- Kondisi Kode  : Kolom "hk_store_id" sudah DIHAPUS (DROP COLUMN) dari tabel orders.
+                  Titik pengambilan tidak lagi berada di level orders (induk transaksi),
+                  melainkan dipindahkan ke sub-pesanan vendor (order_vendor_groups).
+- Lokasi File   : - project-docs/KP_160423183_...md (L637)
+                  - project-docs/databsae chandra mall.sql (L200-L219)
+                  - Live Database MySQL: chandra_mall.orders
+- Detail Masalah: Laporan mendokumentasikan skema lama sebelum sistem multi-vendor split
+                  pickup diterapkan. Di kode backend (project-docs/db.php baris 752),
+                  INSERT ke orders sudah tidak menyertakan kolom hk_store_id.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: HIGH]
+- Poin Laporan  : Bab 4.1.2 Kamus Data - Tabel 4.11 (Tabel order_vendor_groups, baris 647-671)
+                  Tabel 4.11 sama sekali TIDAK memuat kolom "hk_store_id".
+- Kondisi Kode  : Tabel order_vendor_groups MEMILIKI kolom:
+                  "hk_store_id BIGINT(20) UNSIGNED NULL DEFAULT NULL"
+                  dengan Foreign Key fk_ovg_hk_store mereferensikan hk_stores(id)
+                  ON DELETE SET NULL.
+- Lokasi File   : - project-docs/KP_160423183_...md (L650-L671)
+                  - project-docs/databsae chandra mall.sql (L255-L290)
+                  - project-docs/db.php (L532, L596, L762)
+                  - Live Database MySQL: chandra_mall.order_vendor_groups
+- Detail Masalah: Karena satu transaksi checkout dapat memuat produk dari beberapa vendor
+                  dengan mitra toko fisik Hong Kong yang berbeda, hk_store_id harus
+                  melekat pada masing-masing sub-pesanan vendor (order_vendor_groups),
+                  bukan pada orders induk. Laporan belum memuat kolom penting ini.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: HIGH]
+- Poin Laporan  : Bab 4.1.2 Kamus Data - Tabel 4.12 (Tabel order_items, baris 674-689)
+                  Mencatat struktur:
+                  - id: BIGINT(20) UNSIGNED, Primary Key, Auto Increment.
+                  - product_id: BIGINT(20) UNSIGNED, "dapat bernilai NULL".
+- Kondisi Kode  : Kolom surrogate "id" sudah DIHAPUS dari order_items.
+                  Tabel menggunakan COMPOSITE PRIMARY KEY (order_vendor_group_id, product_id).
+                  Kolom "product_id" berstatus NOT NULL dengan foreign key:
+                  CONSTRAINT fk_oi_product FOREIGN KEY (product_id) REFERENCES products(id)
+                  ON DELETE RESTRICT.
+- Lokasi File   : - project-docs/KP_160423183_...md (L681, L683)
+                  - project-docs/databsae chandra mall.sql (L298-L320)
+                  - project-docs/db.php (L521, L544, L782)
+                  - Live Database MySQL: chandra_mall.order_items
+- Detail Masalah: Struktur relasional di kode telah dioptimalkan menjadi relasi murni
+                  tanpa surrogate key id, dan product_id dibuat NOT NULL dengan relasi
+                  RESTRICT untuk mencegah produk terhapus jika masih memiliki riwayat
+                  pesanan. Dokumen masih mencatat versi lama dengan id auto increment dan
+                  product_id nullable.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: HIGH]
+- Poin Laporan  : Bab 4.2.3, Bab 4.3.8 (baris 905-911), dan Bab 6.4 (baris 1137-1145)
+                  Menyatakan bahwa pada halaman checkout, pembeli hanya memilih 1 titik
+                  pengambilan (Pickup Point) di Hong Kong (misal Causeway Bay atau Mong Kok)
+                  untuk seluruh barang pesanan.
+- Kondisi Kode  : Sistem telah menerapkan "Smart Multi-Vendor Pickup Allocation" & "Partial Cart":
+                  1. Partial Cart: Hanya produk yang dicentang (checked) di keranjang belanja
+                     yang diproses ke checkout (app/(tabs)/cart.tsx).
+                  2. Smart Multi-Vendor Store Allocation:
+                     - Jika semua vendor dari produk terpilih memiliki toko mitra bersama,
+                       checkout menampilkan 1 pilihan toko (irisan toko mitra).
+                     - Jika TIDAK ada toko bersama, checkout otomatis membagi (Split Pickup)
+                       menjadi beberapa titik pengambilan per vendor dengan rincian produk
+                       yang jelas dan pilihan toko mitra spesifik per vendor.
+- Lokasi File   : - project-docs/KP_160423183_...md (L907, L1138)
+                  - app/(tabs)/cart.tsx (L422-L438)
+                  - app/checkout.tsx (L108-L230, L384-L520)
+                  - project-docs/db.php (L715-L805)
+- Detail Masalah: Fitur di aplikasi jauh lebih canggih dan realistis daripada narasi laporan.
+                  Laporan mengasumsikan semua vendor selalu bisa diambil di 1 toko yang sama,
+                  padahal kerja sama vendor UMKM dan toko fisik HK bersifat independen.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: HIGH]
+- Poin Laporan  : Bab 5 & Bab 6 serta Daftar Isi Dokumen Laporan
+                  - Daftar Isi memuat placeholder mentah:
+                    "5.1 [ implementasi fitur ]"
+                    "5.2 [ implementasi fitur ]"
+                    "6.1 [ uji coba fitur ]"
+                    "6.2 [ uji coba fitur ]"
+                  - Bab 5 terhenti pada sub-bab 5.2 (Halaman Utama / Beranda). Fitur Cart,
+                    Checkout, Orders, Tracking, Detail Produk, dan Vendors tidak tertulis.
+                  - Bab 6 terhenti pada baris 1154-1156:
+                    "6. ## [ uji coba fitur ]"
+                    "Berdasarkan " (terpotong tanpa lanjutan).
+- Kondisi Kode  : Seluruh fitur tersebut sudah 100% selesai diimplementasikan di workspace:
+                  - Keranjang: app/(tabs)/cart.tsx
+                  - Checkout: app/checkout.tsx
+                  - Riwayat & Tracking: app/orders.tsx
+                  - Detail Produk: app/product/[id].tsx
+                  - Detail Vendor: app/vendor/[slug].tsx & app/vendors.tsx
+                  - Kategori: app/category/[slug].tsx
+                  - Wishlist: app/(tabs)/wishlist.tsx
+                  - Profil: app/(tabs)/profile.tsx
+- Lokasi File   : - project-docs/KP_160423183_...md (L153, L155, L159, L161, L1095, L1154-L1156)
+                  - app/
+- Detail Masalah: Dokumen laporan belum selesai dikerjakan (draft terpotong). Penguji akan
+                  menilai laporan belum tuntas jika placeholder dan potongan teks tersebut
+                  tidak segera dilengkapi.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: MEDIUM]
+- Poin Laporan  : Bab 1.1 (baris 189), Bab 3.2.6 (baris 419-421), Bab 3.3.1 (baris 373-397),
+                  dan Bab 4.2 (BPMN Diagram 4.2, 4.3, 4.4, 4.5).
+                  Laporan merancang 4 peran pengguna aktif dengan antarmuka masing-masing:
+                  1. Admin Utama (Platform Admin)
+                  2. Vendor/Pemasok (UMKM Indonesia)
+                  3. Toko Hong Kong (Admin/Kasir Toko HK)
+                  4. Pembeli (Buyer)
+- Kondisi Kode  : Kode yang diimplementasikan di workspace saat ini HANYA aplikasi Pembeli
+                  (Buyer Mobile/Web App).
+                  Tabel users memang memiliki enum peran ('buyer', 'vendor', 'hk_store', 'admin'),
+                  tetapi dashboard untuk Vendor (manajemen produk/stok/resi kargo), dashboard
+                  Toko HK (pemindai QR kode penjemputan barang), dan dashboard Admin Utama
+                  belum dibangun di repositori ini.
+- Lokasi File   : - project-docs/KP_160423183_...md (L189, L419-L421, L745-L830)
+                  - app/
+                  - project-docs/README.md (L206-L220)
+- Detail Masalah: Laporan mengesankan bahwa seluruh dashboard keempat peran telah dibangun.
+                  Sebaiknya pada Batasan Masalah (Ruang Lingkup) di Bab 1 ditegaskan bahwa
+                  fokus kerja praktik tahap ini adalah pembangunan modul Pembeli (Buyer Client).
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: MEDIUM]
+- Poin Laporan  : Bab 5.1.1 & Listing 5.1 (baris 964, Listing 5.1)
+                  Laporan menyatakan formulir login meminta "email/telepon" dan kode listing
+                  menampilkan: Alert.alert("Perhatian", "Email/telepon dan kata sandi wajib diisi.");
+- Kondisi Kode  : Halaman login (app/login.tsx) telah diubah menjadi login berbasis EMAIL SAJA.
+                  Validasi memeriksa format regex email (/^[^\s@]+@[^\s@]+\.[^\s@]+$/).
+                  Selain itu, pesan error menggunakan visual banner merah di antarmuka
+                  (karena Alert.alert tidak tampil pada platform React Native Web).
+- Lokasi File   : - project-docs/KP_160423183_...md (L964, Listing 5.1)
+                  - app/login.tsx (L34-L44, L69-L74)
+- Detail Masalah: Listing kode dan narasi di Bab 5.1.1 tidak sesuai dengan kode login.tsx terkini.
+
+--------------------------------------------------------------------------------
+
+[SEVERITY: LOW]
+- Poin Laporan  : Bab 5 hanya mendokumentasikan 4 aksi API backend (db.php):
+                  - action=login (Listing 5.2)
+                  - action=register (Listing 5.4)
+                  - action=products & action=categories (Listing 5.11)
+                  - action=cart_add & action=wishlist_add (Listing 5.14)
+- Kondisi Kode  : Backend db.php mengimplementasikan setidaknya 15 endpoint aksi aktif:
+                  products, product, categories, vendors, vendor, login, register, profile,
+                  cart (get, update, delete), wishlist (get, remove), checkout, orders,
+                  order_details, order_tracking, reviews, hk_stores.
+- Lokasi File   : - project-docs/KP_160423183_...md (L972, L987, L1051, L1078)
+                  - project-docs/db.php (L1-L846)
+- Detail Masalah: Sebagian besar endpoint backend yang sangat krusial (terutama checkout,
+                  order_details, dan order_tracking) belum terdokumentasi di laporan.
+
+
+3. HAL YANG PERLU DIPERHATIKAN (ATTENTION NEEDED)
+--------------------------------------------------------------------------------
+1. [KRITIS] Pertentangan Teori Laravel vs Implementasi React Native:
+   Dosen pembimbing atau penguji yang membaca Bab 2 akan langsung bingung ketika melihat
+   lampiran kode dan screenshot aplikasi yang jelas-jelas merupakan React Native dan Expo.
+   Bab 2.3 wajib diubah total menjadi teori React Native & Expo.
+
+2. [KRITIS] Bab 5 dan Bab 6 Terpotong:
+   Dokumen yang saat ini ada memotong penulisan pada Bab 5.2 dan Bab 6 baris 1156.
+   Bab 5.3 hingga 5.8 serta pengujian Bab 6 harus segera dimasukkan ke dokumen laporan.
+
+3. [PENTING] Ketidaksinkronan Skema Transaksi (Kamus Data):
+   Kamus Data Tabel 4.10, 4.11, dan 4.12 di Bab 4 harus disesuaikan dengan skema final
+   yang ada di MySQL agar konsisten dengan file SQL dan logika program.
+
+4. [PENJELASAN RUANG LINGKUP]
+   Perlu ditegaskan pada Bab 1.5 (Ruang Lingkup) bahwa aplikasi yang diimplementasikan
+   adalah Aplikasi Pembeli (Buyer Application), sedangkan portal vendor, toko HK, dan
+   admin menjadi rencana pengembangan lanjutan (roadmap).
+
+
+4. REKOMENDASI TINDAKAN & MATERI REVISI (ACTION PLAN)
+--------------------------------------------------------------------------------
+
+A. REVISI TEORITIS (BAB 2 & BAB 3):
+   1. Ganti Sub-bab 2.3 dari "Framework Laravel" menjadi:
+      "2.3 Framework React Native dan Expo"
+      Uraikan konsep:
+      - React Native (cross-platform JavaScript/TypeScript framework)
+      - Expo SDK 54 dan Expo Router (file-based routing)
+      - Keunggulan untuk rendering di Mobile (iOS/Android) dan Web.
+   2. Pada Bab 3.3.2 (baris 452), ubah kalimat:
+      "Pemilihan framework Laravel dan basis data MySQL..." menjadi:
+      "Pemilihan framework React Native (Expo), backend PHP, dan basis data MySQL..."
+
+--------------------------------------------------------------------------------
+
+B. REVISI KAMUS DATA BAB 4 (TABEL 4.10, 4.11, 4.12):
+
+   1. REVISI Tabel 4.10 (Tabel orders)
+   -----------------------------------------------------------------------------
+   | Nama Field        | Tipe Data           | Keterangan                             |
+   | ----------------- | ------------------- | -------------------------------------- |
+   | id                | BIGINT(20) UNSIGNED | Primary key, identitas unik pesanan.   |
+   | order_number      | VARCHAR(30)         | Nomor invoice unik (ORD-YYYYMMDD-XXXX).|
+   | buyer_id          | BIGINT(20) UNSIGNED | Foreign key ke tabel users (pembeli).  |
+   | status            | ENUM(...)           | Status: pending_payment, paid, dll.    |
+   | total_amount      | DECIMAL(14,2)       | Total nilai seluruh sub-pesanan.       |
+   | payment_deadline  | DATETIME            | Batas waktu bayar (created_at + 24 jam)|
+   | paid_at           | DATETIME            | Waktu verifikasi pembayaran lunas.     |
+   | created_at        | DATETIME            | Waktu pesanan dibuat.                  |
+   | updated_at        | DATETIME            | Waktu pembaruan data terakhir.         |
+   *Catatan: Kolom hk_store_id DIHAPUS karena titik pengambilan dialokasikan per vendor group.
+
+   2. REVISI Tabel 4.11 (Tabel order_vendor_groups)
+   -----------------------------------------------------------------------------
+   | Nama Field            | Tipe Data           | Keterangan                         |
+   | --------------------- | ------------------- | ---------------------------------- |
+   | id                    | BIGINT(20) UNSIGNED | Primary key sub-pesanan vendor.    |
+   | order_id              | BIGINT(20) UNSIGNED | Foreign key ke tabel orders.       |
+   | vendor_id             | BIGINT(20) UNSIGNED | Foreign key ke tabel vendors.      |
+   | hk_store_id           | BIGINT(20) UNSIGNED | Foreign key ke tabel hk_stores     |
+   |                       |                     | (Toko fisik titik pengambilan HK). |
+   | status                | ENUM(...)           | Status logistik sub-pesanan.       |
+   | subtotal_amount       | DECIMAL(14,2)       | Subtotal harga produk vendor ini.  |
+   | platform_fee_amount   | DECIMAL(14,2)       | Potongan komisi platform (5%).     |
+   | vendor_net_amount     | DECIMAL(14,2)       | Pendapatan bersih vendor.          |
+   | confirmation_deadline | DATETIME            | Batas konfirmasi vendor (48 jam).  |
+   | packed_at             | DATETIME            | Waktu barang selesai dikemas.      |
+   | courier_name          | VARCHAR(100)        | Ekspedisi pengiriman kargo.        |
+   | tracking_number       | VARCHAR(100)        | Nomor resi pelacakan kargo.        |
+   | shipped_at            | DATETIME            | Waktu barang diberangkatkan.       |
+   | arrived_at_store_at   | DATETIME            | Waktu tiba di toko fisik HK.       |
+   | picked_up_at          | DATETIME            | Waktu diambil oleh pembeli.        |
+   | handled_by_user_id    | BIGINT(20) UNSIGNED | Staf toko HK penanggung jawab.     |
+   | created_at            | DATETIME            | Waktu data dibuat.                 |
+   | updated_at            | DATETIME            | Waktu pembaruan status terakhir.   |
+   *Catatan: Kolom hk_store_id DITAMBAHKAN untuk mendukung smart split pickup multi-vendor.
+
+   3. REVISI Tabel 4.12 (Tabel order_items)
+   -----------------------------------------------------------------------------
+   | Nama Field            | Tipe Data           | Keterangan                         |
+   | --------------------- | ------------------- | ---------------------------------- |
+   | order_vendor_group_id | BIGINT(20) UNSIGNED | Composite PK, FK ke tabel          |
+   |                       |                     | order_vendor_groups (CASCADE).     |
+   | product_id            | BIGINT(20) UNSIGNED | Composite PK, FK ke tabel products |
+   |                       |                     | (NOT NULL, ON DELETE RESTRICT).    |
+   | product_name_snapshot | VARCHAR(200)        | Snapshot nama produk saat dibeli.  |
+   | price_snapshot        | DECIMAL(14,2)       | Snapshot harga satuan saat dibeli. |
+   | quantity              | INT(10) UNSIGNED    | Kuantitas barang yang dibeli.      |
+   | subtotal              | DECIMAL(14,2)       | Total harga (price x quantity).    |
+   | notes_snapshot        | VARCHAR(255)        | Catatan varian/permintaan khusus.  |
+   *Catatan: Kolom surrogate 'id' DIHAPUS. Menggunakan Composite Primary Key
+   (order_vendor_group_id, product_id) dan product_id berstatus NOT NULL.
+
+--------------------------------------------------------------------------------
+
+C. SARAN PENGISIAN BAB 5 YANG MASIH KOSONG / TERPOTONG:
+   Lengkapi Bab 5 dengan sub-bab berikut yang kodenya sudah tersedia lengkap:
+   - 5.3 Implementasi Halaman Keranjang Belanja (app/(tabs)/cart.tsx)
+     * Menjelaskan fitur checklist seleksi parsial produk yang akan di-checkout.
+     * Listing: fungsi toggleSelectItem, handleQuantityChange, navigasi ke checkout.
+   - 5.4 Implementasi Halaman Checkout dan Alokasi Toko Mitra (app/checkout.tsx)
+     * Menjelaskan logika smart store matching (single common store vs split pickup).
+     * Listing: fungsi loadCheckoutData, handlePlaceOrder, dan visualisasi titik ambil.
+   - 5.5 Implementasi Halaman Riwayat dan Pelacakan Pesanan (app/orders.tsx)
+     * Menjelaskan filter tab status, rincian sub-pesanan vendor, dan modal timeline tracking.
+     * Listing: fungsi loadOrders, renderTimelineStep, dan modal pelacakan.
+   - 5.6 Implementasi Halaman Detail Produk (app/product/[id].tsx)
+     * Menjelaskan galeri gambar, kelayakan ekspor (is_exportable), profil vendor asal.
+   - 5.7 Implementasi Halaman Profil dan Direktori Mitra (app/vendors.tsx & vendor/[slug].tsx)
+     * Menjelaskan daftar UMKM terverifikasi dan etalase khusus per vendor.
+
+--------------------------------------------------------------------------------
+
+D. SARAN PENGISIAN BAB 6 (PENGUJIAN SISTEM BLACK-BOX):
+   Lengkapi baris 1154-1156 yang terpotong dengan tabel uji coba fungsionalitas:
+   1. Skenario Autentikasi (Validasi format email, sandi salah, registrasi sukses).
+   2. Skenario Penjelajahan Katalog & Filter (Pencarian nama, filter kategori, sorting harga).
+   3. Skenario Keranjang & Checklist Parsial (Pilih sebagian item, hitung ulang subtotal dinamis).
+   4. Skenario Checkout Multi-Vendor:
+      - Kasus A: Vendor bekerja sama dengan toko yang sama -> Memilih 1 toko HK bersama.
+      - Kasus B: Vendor bekerja sama dengan toko berbeda -> Split pickup per vendor.
+   5. Skenario Pemotongan Stok & Pembersihan Cart (Stok berkurang otomatis, item checkout terhapus).
+   6. Skenario Pelacakan Pesanan (Timeline logistik tampil sesuai status order_status_logs).
+
+================================================================================
+AKHIR DOKUMEN REKAPAN PENGECEKAN
+================================================================================
+

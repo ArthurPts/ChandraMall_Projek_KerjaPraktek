@@ -201,7 +201,6 @@ CREATE TABLE IF NOT EXISTS `chandra_mall`.`orders` (
   `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `order_number` VARCHAR(30) NOT NULL,
   `buyer_id` BIGINT(20) UNSIGNED NOT NULL,
-  `hk_store_id` BIGINT(20) UNSIGNED NOT NULL,
   `status` ENUM('pending_payment', 'paid', 'cancelled', 'completed') NOT NULL DEFAULT 'pending_payment',
   `total_amount` DECIMAL(14,2) NOT NULL,
   `payment_deadline` DATETIME NOT NULL COMMENT 'created_at + 24 hours',
@@ -211,13 +210,9 @@ CREATE TABLE IF NOT EXISTS `chandra_mall`.`orders` (
   PRIMARY KEY (`id`),
   UNIQUE INDEX `uq_orders_number` (`order_number` ASC),
   INDEX `idx_orders_buyer` (`buyer_id` ASC),
-  INDEX `idx_orders_store` (`hk_store_id` ASC),
   CONSTRAINT `fk_orders_buyer`
     FOREIGN KEY (`buyer_id`)
-    REFERENCES `chandra_mall`.`users` (`id`),
-  CONSTRAINT `fk_orders_store`
-    FOREIGN KEY (`hk_store_id`)
-    REFERENCES `chandra_mall`.`hk_stores` (`id`))
+    REFERENCES `chandra_mall`.`users` (`id`))
 ENGINE = InnoDB
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_unicode_ci;
@@ -258,6 +253,7 @@ CREATE TABLE IF NOT EXISTS `chandra_mall`.`order_vendor_groups` (
   `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `order_id` BIGINT(20) UNSIGNED NOT NULL,
   `vendor_id` BIGINT(20) UNSIGNED NOT NULL,
+  `hk_store_id` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
   `status` ENUM('pending_payment', 'awaiting_confirmation', 'packed', 'shipped', 'in_customs', 'returned', 'cancelled', 'arrived_at_hk_store', 'picked_up', 'completed') NOT NULL DEFAULT 'pending_payment',
   `subtotal_amount` DECIMAL(14,2) NOT NULL,
   `platform_fee_amount` DECIMAL(14,2) NOT NULL DEFAULT 0.00,
@@ -278,9 +274,14 @@ CREATE TABLE IF NOT EXISTS `chandra_mall`.`order_vendor_groups` (
   INDEX `idx_ovg_status_deadline` (`status` ASC, `confirmation_deadline` ASC),
   INDEX `fk_ovg_handler` (`handled_by_user_id` ASC),
   INDEX `idx_ovg_hk_pickup` (`status` ASC, `arrived_at_store_at` ASC),
+  INDEX `fk_ovg_hk_store` (`hk_store_id` ASC),
   CONSTRAINT `fk_ovg_handler`
     FOREIGN KEY (`handled_by_user_id`)
     REFERENCES `chandra_mall`.`users` (`id`)
+    ON DELETE SET NULL,
+  CONSTRAINT `fk_ovg_hk_store`
+    FOREIGN KEY (`hk_store_id`)
+    REFERENCES `chandra_mall`.`hk_stores` (`id`)
     ON DELETE SET NULL,
   CONSTRAINT `fk_ovg_order`
     FOREIGN KEY (`order_id`)
@@ -298,16 +299,14 @@ COLLATE = utf8mb4_unicode_ci;
 -- Table `chandra_mall`.`order_items`
 -- -----------------------------------------------------
 CREATE TABLE IF NOT EXISTS `chandra_mall`.`order_items` (
-  `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
   `order_vendor_group_id` BIGINT(20) UNSIGNED NOT NULL,
-  `product_id` BIGINT(20) UNSIGNED NULL DEFAULT NULL,
+  `product_id` BIGINT(20) UNSIGNED NOT NULL,
   `product_name_snapshot` VARCHAR(200) NOT NULL,
   `price_snapshot` DECIMAL(14,2) NOT NULL,
   `quantity` INT(10) UNSIGNED NOT NULL,
   `subtotal` DECIMAL(14,2) NOT NULL,
   `notes_snapshot` VARCHAR(255) NULL DEFAULT NULL,
-  PRIMARY KEY (`id`),
-  INDEX `idx_oi_group` (`order_vendor_group_id` ASC),
+  PRIMARY KEY (`order_vendor_group_id`, `product_id`),
   INDEX `fk_oi_product` (`product_id` ASC),
   CONSTRAINT `fk_oi_group`
     FOREIGN KEY (`order_vendor_group_id`)
@@ -315,8 +314,7 @@ CREATE TABLE IF NOT EXISTS `chandra_mall`.`order_items` (
     ON DELETE CASCADE,
   CONSTRAINT `fk_oi_product`
     FOREIGN KEY (`product_id`)
-    REFERENCES `chandra_mall`.`products` (`id`)
-    ON DELETE SET NULL)
+    REFERENCES `chandra_mall`.`products` (`id`))
 ENGINE = InnoDB
 DEFAULT CHARACTER SET = utf8mb4
 COLLATE = utf8mb4_unicode_ci;

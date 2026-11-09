@@ -269,7 +269,7 @@ elseif ($action === 'cart') {
     if ($userId <= 0) fail(400, 'user_id tidak valid');
     $result = $conn->query(
         "SELECT ci.quantity, ci.notes,
-                p.id AS product_id, p.name, p.price, p.stock,
+                p.id AS product_id, p.name, p.price, p.stock, p.vendor_id,
                 (SELECT image_url FROM product_images pi WHERE pi.product_id = p.id LIMIT 1) AS image_url,
                 v.store_name AS vendor_name
          FROM cart_items ci
@@ -389,7 +389,85 @@ elseif ($action === 'remove_wishlist') {
 // 11. ACTION HK STORES & ORDERS
 // ==========================================
 elseif ($action === 'hk_stores') {
-    $result = $conn->query("SELECT id, name, district, address_line, phone, opening_hours FROM hk_stores WHERE is_active = 1 ORDER BY district, name");
+    $userId = (int)($_GET['user_id'] ?? 0);
+    $vendorIdsParam = trim($_GET['vendor_ids'] ?? '');
+
+    // 1. Jika ada vendor_ids spesifik yang dikirimkan (misal: "1,2")
+    if ($vendorIdsParam !== '') {
+        $rawIds = explode(',', $vendorIdsParam);
+        $vIds = [];
+        foreach ($rawIds as $rid) {
+            $val = (int)trim($rid);
+            if ($val > 0) $vIds[] = $val;
+        }
+        $vIds = array_unique($vIds);
+        if (!empty($vIds)) {
+            $vCount = count($vIds);
+            $vIdsStr = implode(',', $vIds);
+            $stmt = $conn->query(
+                "SELECT hs.id, hs.name, hs.district, hs.address_line, hs.phone, hs.opening_hours,
+                        GROUP_CONCAT(hsv.vendor_id) AS supported_vendor_ids
+                 FROM hk_stores hs
+                 JOIN hk_store_vendors hsv ON hsv.hk_store_id = hs.id AND hsv.is_active = 1
+                 WHERE hs.is_active = 1 AND hsv.vendor_id IN ($vIdsStr)
+                 GROUP BY hs.id
+                 HAVING COUNT(DISTINCT hsv.vendor_id) = $vCount
+                 ORDER BY hs.district, hs.name"
+            );
+            $data = [];
+            if ($stmt) {
+                while ($row = $stmt->fetch_assoc()) $data[] = $row;
+            }
+            echo json_encode($data);
+            exit;
+        }
+    }
+
+    // 2. Jika user_id dikirimkan, periksa vendor_id dari produk di keranjang pengguna
+    if ($userId > 0) {
+        $cartVendorsRes = $conn->query(
+            "SELECT DISTINCT p.vendor_id
+             FROM cart_items ci
+             JOIN products p ON p.id = ci.product_id
+             WHERE ci.user_id = $userId AND p.vendor_id IS NOT NULL"
+        );
+        $vIds = [];
+        if ($cartVendorsRes) {
+            while ($vRow = $cartVendorsRes->fetch_assoc()) {
+                $vid = (int)$vRow['vendor_id'];
+                if ($vid > 0) $vIds[] = $vid;
+            }
+        }
+        if (!empty($vIds)) {
+            $vCount = count($vIds);
+            $vIdsStr = implode(',', $vIds);
+            $stmt = $conn->query(
+                "SELECT hs.id, hs.name, hs.district, hs.address_line, hs.phone, hs.opening_hours,
+                        GROUP_CONCAT(hsv.vendor_id) AS supported_vendor_ids
+                 FROM hk_stores hs
+                 JOIN hk_store_vendors hsv ON hsv.hk_store_id = hs.id AND hsv.is_active = 1
+                 WHERE hs.is_active = 1 AND hsv.vendor_id IN ($vIdsStr)
+                 GROUP BY hs.id
+                 HAVING COUNT(DISTINCT hsv.vendor_id) = $vCount
+                 ORDER BY hs.district, hs.name"
+            );
+            $data = [];
+            if ($stmt) {
+                while ($row = $stmt->fetch_assoc()) $data[] = $row;
+            }
+            echo json_encode($data);
+            exit;
+        }
+    }
+
+    // 3. Fallback jika keranjang kosong atau user_id tidak dikirim
+    $result = $conn->query(
+        "SELECT hs.id, hs.name, hs.district, hs.address_line, hs.phone, hs.opening_hours,
+                (SELECT GROUP_CONCAT(hsv.vendor_id) FROM hk_store_vendors hsv WHERE hsv.hk_store_id = hs.id AND hsv.is_active = 1) AS supported_vendor_ids
+         FROM hk_stores hs
+         WHERE hs.is_active = 1
+         ORDER BY hs.district, hs.name"
+    );
     $data = [];
     while ($row = $result->fetch_assoc()) $data[] = $row;
     echo json_encode($data);
@@ -399,10 +477,23 @@ elseif ($action === 'orders') {
     $userId = (int)($_GET['user_id'] ?? 0);
     $result = $conn->query(
         "SELECT o.id, o.order_number, o.status, o.total_amount, o.created_at,
-                hs.name AS hk_store_name, hs.district AS hk_store_district,
-                hs.address_line AS hk_store_address, hs.phone AS hk_store_phone
+                (SELECT GROUP_CONCAT(DISTINCT hs.name SEPARATOR ', ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_name,
+                (SELECT GROUP_CONCAT(DISTINCT hs.district SEPARATOR ', ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_district,
+                (SELECT GROUP_CONCAT(DISTINCT hs.address_line SEPARATOR ' | ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_address,
+                (SELECT GROUP_CONCAT(DISTINCT hs.phone SEPARATOR ', ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_phone
          FROM orders o
-         LEFT JOIN hk_stores hs ON hs.id = o.hk_store_id
          WHERE o.buyer_id = $userId
          ORDER BY o.created_at DESC"
     );
@@ -427,21 +518,30 @@ elseif ($action === 'order_details') {
     }
 
     $result = $conn->query(
-        "SELECT oi.id,
+        "SELECT oi.order_vendor_group_id,
                 oi.product_id,
                 oi.product_name_snapshot AS product_name,
                 oi.price_snapshot AS price,
                 oi.quantity,
                 oi.subtotal,
                 oi.notes_snapshot AS notes,
+                v.id AS vendor_id,
                 v.store_name AS vendor_name,
+                ovg.id AS vendor_group_id,
                 ovg.status AS vendor_status,
+                ovg.hk_store_id,
+                hs.name AS hk_store_name,
+                hs.address_line AS hk_store_address,
+                hs.district AS hk_store_district,
+                hs.phone AS hk_store_phone,
+                hs.opening_hours AS hk_store_hours,
                 (SELECT image_url FROM product_images pi WHERE pi.product_id = oi.product_id ORDER BY sort_order LIMIT 1) AS image_url
          FROM order_vendor_groups ovg
          JOIN order_items oi ON oi.order_vendor_group_id = ovg.id
          LEFT JOIN vendors v ON v.id = ovg.vendor_id
+         LEFT JOIN hk_stores hs ON hs.id = ovg.hk_store_id
          WHERE ovg.order_id = $orderId
-         ORDER BY oi.id ASC"
+         ORDER BY ovg.id ASC, oi.product_id ASC"
     );
 
     $data = [];
@@ -460,10 +560,23 @@ elseif ($action === 'order_tracking') {
 
     $orderStmt = $conn->prepare(
         "SELECT o.id, o.order_number, o.status, o.total_amount, o.payment_deadline, o.paid_at, o.created_at,
-                hs.id AS hk_store_id, hs.name AS hk_store_name, hs.district AS hk_store_district,
-                hs.address_line AS hk_store_address, hs.phone AS hk_store_phone, hs.opening_hours AS hk_store_hours
+                (SELECT GROUP_CONCAT(DISTINCT hs.name SEPARATOR ', ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_name,
+                (SELECT GROUP_CONCAT(DISTINCT hs.address_line SEPARATOR ' | ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_address,
+                (SELECT GROUP_CONCAT(DISTINCT hs.district SEPARATOR ', ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_district,
+                (SELECT GROUP_CONCAT(DISTINCT hs.phone SEPARATOR ', ')
+                 FROM order_vendor_groups ovg
+                 JOIN hk_stores hs ON hs.id = ovg.hk_store_id
+                 WHERE ovg.order_id = o.id) AS hk_store_phone
          FROM orders o
-         LEFT JOIN hk_stores hs ON hs.id = o.hk_store_id
          WHERE o.id = ? AND o.buyer_id = ? LIMIT 1"
     );
     $orderStmt->bind_param("ii", $orderId, $userId);
@@ -475,10 +588,12 @@ elseif ($action === 'order_tracking') {
 
     $groupRes = $conn->query(
         "SELECT ovg.id, ovg.vendor_id, ovg.status, ovg.subtotal_amount, ovg.courier_name, ovg.tracking_number,
-                ovg.shipped_at, ovg.arrived_at_store_at, ovg.picked_up_at,
-                v.store_name AS vendor_name, v.origin_city AS vendor_origin_city
+                ovg.shipped_at, ovg.arrived_at_store_at, ovg.picked_up_at, ovg.hk_store_id,
+                v.store_name AS vendor_name, v.origin_city AS vendor_origin_city,
+                hs.name AS hk_store_name, hs.address_line AS hk_store_address, hs.district AS hk_store_district, hs.opening_hours AS hk_store_hours
          FROM order_vendor_groups ovg
          LEFT JOIN vendors v ON v.id = ovg.vendor_id
+         LEFT JOIN hk_stores hs ON hs.id = ovg.hk_store_id
          WHERE ovg.order_id = $orderId"
     );
     $groups = [];
@@ -537,45 +652,127 @@ elseif ($action === 'profile') {
 // ==========================================
 elseif ($action === 'checkout') {
     $userId = (int)($input['user_id'] ?? 0);
-    $hkStoreId = (int)($input['hk_store_id'] ?? 0);
+    $defaultHkStoreId = (int)($input['hk_store_id'] ?? 0);
+    $paymentMethod = $conn->real_escape_string($input['payment_method'] ?? 'fps');
+    $vendorStores = is_array($input['vendor_stores'] ?? null) ? $input['vendor_stores'] : [];
+
+    // Filter daftar product_id yang dicheckout jika dikirimkan dari frontend
+    $rawProductIds = $input['product_ids'] ?? [];
+    $selectedProductIds = [];
+    if (is_array($rawProductIds)) {
+        foreach ($rawProductIds as $pid) {
+            $val = (int)$pid;
+            if ($val > 0) $selectedProductIds[] = $val;
+        }
+    }
+    $selectedProductIds = array_unique($selectedProductIds);
+
+    if ($userId <= 0) {
+        fail(400, "Pengguna tidak valid. Silakan login kembali.");
+    }
+
+    $whereClause = "ci.user_id = $userId";
+    if (!empty($selectedProductIds)) {
+        $pidsStr = implode(',', $selectedProductIds);
+        $whereClause .= " AND ci.product_id IN ($pidsStr)";
+    }
 
     $items = [];
     $res = $conn->query(
-        "SELECT ci.product_id, ci.quantity, ci.notes, p.price, p.vendor_id, p.name
+        "SELECT ci.product_id, ci.quantity, ci.notes, p.price, p.vendor_id, p.name, p.stock
          FROM cart_items ci JOIN products p ON p.id = ci.product_id
-         WHERE ci.user_id = $userId"
+         WHERE $whereClause"
     );
     while ($row = $res->fetch_assoc()) $items[] = $row;
 
-    if (!$items) { echo json_encode(["error" => "Keranjang kosong"]); exit; }
+    if (!$items) {
+        fail(400, "Tidak ada item keranjang terpilih untuk dicheckout");
+    }
+
+    // 1. Validasi stok produk
+    foreach ($items as $it) {
+        if ($it['quantity'] > $it['stock']) {
+            fail(400, "Stok produk '{$it['name']}' tidak mencukupi (tersisa {$it['stock']})");
+        }
+    }
+
+    // 2. Kelompokkan item berdasarkan vendor_id unik
+    $groups = [];
+    foreach ($items as $it) {
+        $vId = (int)$it['vendor_id'];
+        $groups[$vId][] = $it;
+    }
+
+    // 3. Validasi dan tentukan hk_store_id untuk masing-masing vendor group
+    $resolvedVendorStores = [];
+    foreach ($groups as $vId => $vendorItems) {
+        $assignedStoreId = (int)($vendorStores[$vId] ?? $vendorStores[(string)$vId] ?? $defaultHkStoreId);
+        if ($assignedStoreId <= 0) {
+            $vRow = $conn->query("SELECT store_name FROM vendors WHERE id = $vId")->fetch_assoc();
+            $vName = $vRow['store_name'] ?? "Vendor #$vId";
+            fail(400, "Silakan pilih titik toko mitra HK untuk produk dari '$vName'");
+        }
+
+        // Validasi kemitraan toko mitra HK dengan vendor ini
+        $checkPartner = $conn->query(
+            "SELECT 1 FROM hk_store_vendors
+             WHERE hk_store_id = $assignedStoreId AND vendor_id = $vId AND is_active = 1
+             LIMIT 1"
+        );
+        if (!$checkPartner || $checkPartner->num_rows == 0) {
+            $vRow = $conn->query("SELECT store_name FROM vendors WHERE id = $vId")->fetch_assoc();
+            $sRow = $conn->query("SELECT name FROM hk_stores WHERE id = $assignedStoreId")->fetch_assoc();
+            $vName = $vRow['store_name'] ?? "Vendor #$vId";
+            $sName = $sRow['name'] ?? "Toko #$assignedStoreId";
+            fail(400, "Toko '$sName' tidak bekerjasama dengan vendor '$vName'.");
+        }
+
+        $resolvedVendorStores[$vId] = $assignedStoreId;
+    }
 
     $orderNumber = "ORD-" . date("Ymd") . "-" . rand(1000, 9999);
     $total = 0;
     foreach ($items as $it) $total += $it['price'] * $it['quantity'];
+    $now = date("Y-m-d H:i:s");
     $deadline = date("Y-m-d H:i:s", strtotime("+24 hours"));
+    $confirmDeadline = date("Y-m-d H:i:s", strtotime("+48 hours"));
 
+    // 4. Simpan order ke tabel orders (TANPA hk_store_id karena hk_store_id dicatat per sub-order vendor)
     $conn->query(
-        "INSERT INTO orders (order_number, buyer_id, hk_store_id, status, total_amount, payment_deadline)
-         VALUES ('$orderNumber', $userId, $hkStoreId, 'pending_payment', $total, '$deadline')"
+        "INSERT INTO orders (order_number, buyer_id, status, total_amount, payment_deadline, paid_at)
+         VALUES ('$orderNumber', $userId, 'paid', $total, '$deadline', '$now')"
     );
     $orderId = $conn->insert_id;
 
-    $groups = [];
-    foreach ($items as $it) $groups[$it['vendor_id']][] = $it;
+    // 5. Catat data pembayaran di tabel payments (status 'success')
+    $gatewayRef = "SIMPAY-" . date("YmdHis") . "-" . rand(1000, 9999);
+    $conn->query(
+        "INSERT INTO payments (order_id, payment_method, amount, status, gateway_ref, paid_at)
+         VALUES ($orderId, '$paymentMethod', $total, 'success', '$gatewayRef', '$now')"
+    );
 
+    // 6. Simpan sub-order per vendor ke tabel order_vendor_groups beserta hk_store_id masing-masing
     foreach ($groups as $vendorId => $vendorItems) {
         $subtotal = 0;
         foreach ($vendorItems as $vi) $subtotal += $vi['price'] * $vi['quantity'];
         
-        // Perhitungan komisi platform 5% & net vendor
+        // Komisi platform 5% & net vendor
         $fee = round($subtotal * 0.05, 2);
         $net = $subtotal - $fee;
+        $assignedStoreId = $resolvedVendorStores[$vendorId];
 
+        // Sub-order vendor status langsung 'awaiting_confirmation' dengan hk_store_id spesifik vendor ini
         $conn->query(
-            "INSERT INTO order_vendor_groups (order_id, vendor_id, status, subtotal_amount, platform_fee_amount, vendor_net_amount)
-             VALUES ($orderId, $vendorId, 'pending_payment', $subtotal, $fee, $net)"
+            "INSERT INTO order_vendor_groups (order_id, vendor_id, hk_store_id, status, subtotal_amount, platform_fee_amount, vendor_net_amount, confirmation_deadline)
+             VALUES ($orderId, $vendorId, $assignedStoreId, 'awaiting_confirmation', $subtotal, $fee, $net, '$confirmDeadline')"
         );
         $groupId = $conn->insert_id;
+
+        // Catat log status awal
+        $conn->query(
+            "INSERT INTO order_status_logs (order_vendor_group_id, status, note, changed_by_user_id)
+             VALUES ($groupId, 'awaiting_confirmation', 'Pembayaran berhasil dikonfirmasi. Menunggu konfirmasi vendor.', $userId)"
+        );
 
         foreach ($vendorItems as $vi) {
             $sub = $vi['price'] * $vi['quantity'];
@@ -585,12 +782,59 @@ elseif ($action === 'checkout') {
                 "INSERT INTO order_items (order_vendor_group_id, product_id, product_name_snapshot, price_snapshot, quantity, subtotal, notes_snapshot)
                  VALUES ($groupId, {$vi['product_id']}, '$name', {$vi['price']}, {$vi['quantity']}, $sub, '$notes')"
             );
-            $conn->query("UPDATE products SET stock = stock - {$vi['quantity']} WHERE id = {$vi['product_id']}");
+            // 7. Potong stok produk di database
+            $conn->query("UPDATE products SET stock = GREATEST(0, stock - {$vi['quantity']}) WHERE id = {$vi['product_id']}");
         }
     }
 
-    $conn->query("DELETE FROM cart_items WHERE user_id = $userId");
-    echo json_encode(["order_id" => $orderId, "order_number" => $orderNumber, "total" => $total]);
+    // 8. Hapus HANYA produk yang dicheckout dari keranjang (cart_items)
+    $processedProductIds = array_column($items, 'product_id');
+    if (!empty($processedProductIds)) {
+        $processedPidsStr = implode(',', array_map('intval', $processedProductIds));
+        $conn->query("DELETE FROM cart_items WHERE user_id = $userId AND product_id IN ($processedPidsStr)");
+        $conn->query("DELETE FROM wishlist_items WHERE user_id = $userId AND product_id IN ($processedPidsStr)");
+    }
+
+    // 9. Susun ringkasan alokasi toko mitra per vendor untuk respon frontend
+    $storeAssignments = [];
+    foreach ($groups as $vId => $vItems) {
+        $stId = $resolvedVendorStores[$vId];
+        $stRow = $conn->query("SELECT name, address_line, district FROM hk_stores WHERE id = $stId")->fetch_assoc();
+        $vRow = $conn->query("SELECT store_name FROM vendors WHERE id = $vId")->fetch_assoc();
+        $storeAssignments[] = [
+            "vendor_id" => $vId,
+            "vendor_name" => $vRow['store_name'] ?? "Vendor #$vId",
+            "hk_store_id" => $stId,
+            "store_name" => $stRow['name'] ?? "Toko Mitra HK",
+            "store_address" => $stRow['address_line'] ?? "Hong Kong",
+            "store_district" => $stRow['district'] ?? "",
+            "items" => array_map(function($i) {
+                return [
+                    "product_id" => $i['product_id'],
+                    "name" => $i['name'],
+                    "quantity" => $i['quantity'],
+                    "price" => $i['price']
+                ];
+            }, $vItems)
+        ];
+    }
+
+    // 10. Kirim notifikasi konfirmasi pembayaran berhasil
+    $notifTitle = "Pembayaran Pesanan Berhasil";
+    $notifMsg = "Pesanan $orderNumber senilai HKD " . number_format($total, 2) . " telah berhasil terbayar dan langsung diteruskan ke vendor.";
+    $conn->query(
+        "INSERT INTO notifications (user_id, title, message, type, related_order_id, is_read)
+         VALUES ($userId, '$notifTitle', '$notifMsg', 'order_paid', $orderId, 0)"
+    );
+
+    echo json_encode([
+        "order_id" => $orderId,
+        "order_number" => $orderNumber,
+        "status" => "paid",
+        "total" => $total,
+        "store_assignments" => $storeAssignments,
+        "message" => "Pesanan berhasil dibuat dan otomatis terbayar!"
+    ]);
 }
 
 else {

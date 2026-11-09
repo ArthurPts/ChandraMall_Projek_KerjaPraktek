@@ -31,13 +31,16 @@ import { formatDate, formatPrice } from "../constants/format";
 import { useSessionUser } from "../constants/session";
 
 type OrderItem = {
-  id?: number | string;
+  order_vendor_group_id?: number | string;
   product_id?: number | string;
   product_name?: string;
   name?: string;
   image_url?: string | null;
   vendor_name?: string;
   vendor_status?: string;
+  hk_store_id?: number | string;
+  hk_store_name?: string;
+  hk_store_address?: string;
   quantity?: number | string;
   price?: number | string;
   subtotal?: number | string;
@@ -254,8 +257,8 @@ export default function Orders() {
     if (s.includes("pending")) {
       return { text: "Menunggu Pembayaran", bg: Colors.warningSubtle, color: Colors.warning };
     }
-    if (s.includes("packed") || s.includes("awaiting")) {
-      return { text: "Diproses Seller", bg: Colors.infoSubtle, color: Colors.info };
+    if (s === "paid" || s.includes("paid") || s.includes("packed") || s.includes("awaiting")) {
+      return { text: "Terbayar (Diproses Seller)", bg: Colors.infoSubtle, color: Colors.info };
     }
     if (s.includes("shipped") || s.includes("customs")) {
       return { text: "Dalam Pengiriman ke HK", bg: Colors.burgundySubtle, color: Colors.burgundy };
@@ -273,7 +276,7 @@ export default function Orders() {
     const s = o.status.toLowerCase();
     if (filter === "all") return true;
     if (filter === "pending") return s.includes("pending");
-    if (filter === "processing") return s.includes("packed") || s.includes("awaiting");
+    if (filter === "processing") return s.includes("paid") || s.includes("packed") || s.includes("awaiting");
     if (filter === "shipping") return s.includes("shipped") || s.includes("customs");
     if (filter === "ready") return s.includes("arrived");
     if (filter === "completed") return s.includes("completed") || s.includes("picked_up");
@@ -454,7 +457,16 @@ export default function Orders() {
                                   </Text>
                                   <Text style={styles.expandedItemSub}>
                                     {item.quantity} barang • {formatPrice(item.price)}
+                                    {item.vendor_name ? ` • Vendor: ${item.vendor_name}` : ""}
                                   </Text>
+                                  {item.hk_store_name && (
+                                    <View style={styles.itemStoreRow}>
+                                      <MapPin size={11} color={Colors.burgundy} />
+                                      <Text style={styles.itemStoreText}>
+                                        Ambil di: {item.hk_store_name}
+                                      </Text>
+                                    </View>
+                                  )}
                                 </View>
                                 <Text style={styles.expandedItemTotal}>
                                   {formatPrice(Number(item.price || 0) * Number(item.quantity || 1))}
@@ -1182,5 +1194,16 @@ const styles = StyleSheet.create({
     fontSize: 11,
     color: Colors.muted,
     marginTop: 2,
+  },
+  itemStoreRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 3,
+  },
+  itemStoreText: {
+    fontSize: 11,
+    color: Colors.burgundy,
+    fontWeight: "600",
   },
 });
